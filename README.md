@@ -1,4 +1,4 @@
-# argo-workflows_executor
+# argo-workflows-executor
 
 [![PyPI - Version](https://img.shields.io/pypi/v/argo-workflows-executor.svg)](https://pypi.org/project/argo-workflows-executor)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/argo-workflows-executor.svg)](https://pypi.org/project/argo-workflows-executor)
@@ -7,7 +7,7 @@
 
 **Table of Contents**
 
-- [argo-workflows\_executor](#argo-workflows_executor)
+- [argo-workflows-executor](#argo-workflows-executor)
   - [Installation](#installation)
   - [License](#license)
 
