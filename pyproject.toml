@@ -38,7 +38,7 @@ Issues = "https://github.com/nebari-dev/argo-workflows-executor/issues"
 Source = "https://github.com/nebari-dev/argo-workflows-executor"
 
 [tool.hatch.version]
-path = "argo_workflow_executor/__about__.py"
+path = "argo-workflows_executor/__about__.py"
 
 [tool.hatch.envs.default]
 dependencies = [
@@ -68,7 +68,7 @@ dependencies = [
   "ruff>=0.0.243",
 ]
 [tool.hatch.envs.lint.scripts]
-typing = "mypy --install-types --non-interactive {args:argo_workflow_executor tests}"
+typing = "mypy --install-types --non-interactive {args:argo-workflows_executor tests}"
 style = [
   "ruff {args:.}",
   "black --check --diff {args:.}",
@@ -134,7 +134,7 @@ unfixable = [
 ]
 
 [tool.ruff.isort]
-known-first-party = ["argo_workflow_executor"]
+known-first-party = ["argo-workflows_executor"]
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -144,15 +144,15 @@ ban-relative-imports = "all"
 "tests/**/*" = ["PLR2004", "S101", "TID252"]
 
 [tool.coverage.run]
-source_pkgs = ["argo_workflow_executor", "tests"]
+source_pkgs = ["argo-workflows_executor", "tests"]
 branch = true
 parallel = true
 omit = [
-  "argo_workflow_executor/__about__.py",
+  "argo-workflows_executor/__about__.py",
 ]
 
 [tool.coverage.paths]
-argo_workflow_executor = ["argo_workflow_executor", "*/argo-workflows-executor/argo_workflow_executor"]
+argo-workflows_executor = ["argo-workflows_executor", "*/argo-workflows-executor/argo-workflows_executor"]
 tests = ["tests", "*/argo-workflows-executor/tests"]
 
 [tool.coverage.report]
