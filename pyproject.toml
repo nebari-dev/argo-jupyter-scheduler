@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "argo-workflow-executor"
+name = "argo-workflows-executor"
 dynamic = ["version"]
 description = ''
 readme = "README.md"
@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/nebari-dev/argo-workflow-executor#readme"
-Issues = "https://github.com/nebari-dev/argo-workflow-executor/issues"
-Source = "https://github.com/nebari-dev/argo-workflow-executor"
+Documentation = "https://github.com/nebari-dev/argo-workflows-executor#readme"
+Issues = "https://github.com/nebari-dev/argo-workflows-executor/issues"
+Source = "https://github.com/nebari-dev/argo-workflows-executor"
 
 [tool.hatch.version]
 path = "argo_workflow_executor/__about__.py"
@@ -152,8 +152,8 @@ omit = [
 ]
 
 [tool.coverage.paths]
-argo_workflow_executor = ["argo_workflow_executor", "*/argo-workflow-executor/argo_workflow_executor"]
-tests = ["tests", "*/argo-workflow-executor/tests"]
+argo_workflow_executor = ["argo_workflow_executor", "*/argo-workflows-executor/argo_workflow_executor"]
+tests = ["tests", "*/argo-workflows-executor/tests"]
 
 [tool.coverage.report]
 exclude_lines = [

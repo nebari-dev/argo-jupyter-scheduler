@@ -12,7 +12,7 @@ from jupyter_scheduler.models import JobFeature
 from jupyter_scheduler.parameterize import add_parameters
 from nbconvert.preprocessors import ExecutePreprocessor
 
-BASIC_LOGGING = "argo-workflow-executor : {}"
+BASIC_LOGGING = "argo-workflows-executor : {}"
 
 
 class ArgoExecutor(ExecutionManager):
