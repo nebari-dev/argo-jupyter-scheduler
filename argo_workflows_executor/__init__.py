@@ -1,7 +1,7 @@
 import os
 import shutil
 from multiprocessing import Process
-from typing import Dict
+from typing import Dict, Union
 from urllib.parse import urljoin
 
 import fsspec
@@ -81,9 +81,9 @@ class ArgoExecutor(ExecutionManager):
         root_dir: str,
         db_url: str,
         staging_paths: Dict[str, str],
-        job_definition_id: str | None = None,
-        schedule: str | None = None,
-        timezone: str | None = None,
+        job_definition_id: Union[str, None] = None,
+        schedule: Union[str, None] = None,
+        timezone: Union[str, None] = None,
     ):
         self.job_id = job_id
         self.staging_paths = staging_paths
@@ -152,11 +152,11 @@ def authenticate():
     return global_config
 
 
-def gen_workflow_name(job_id):
+def gen_workflow_name(job_id: str):
     return f"js-wf-{job_id}"
 
 
-def gen_cron_workflow_name(job_definition_id):
+def gen_cron_workflow_name(job_definition_id: str):
     return f"js-cwf-{job_definition_id}"
 
 
@@ -248,7 +248,7 @@ def delete_cron_workflow(job_definition_id: str):
 
 
 @script()
-def run_notebook(job, staging_paths):
+def run_notebook(job: DescribeJob, staging_paths: str):
     # TODO: this is a currently just copy of the existing
     # Jupyter-Scheduler DefaultExecutor execute() method,
     # modify this function as needed
@@ -369,7 +369,7 @@ class ArgoScheduler(Scheduler):
         if delete_associated_workflow:
             delete_workflow(job_id)
 
-    def stop_job(self, job_id):
+    def stop_job(self, job_id: str):
         print(BASIC_LOGGING.format("ArgoScheduler.stop_job"))
         with self.db_session() as session:
             job_record = session.query(Job).filter(Job.job_id == job_id).one()
@@ -472,7 +472,7 @@ class ArgoScheduler(Scheduler):
 
         delete_cron_workflow(job_definition_id)
 
-    def create_cron_job_from_definition(self, job_definition_id: str):
+    def create_cron_job_from_definition(self, job_definition_id: str) -> str:
         print(BASIC_LOGGING.format("ArgoScheduler.create_job_from_definition"))
         job_id = None
         definition = self.get_job_definition(job_definition_id)
