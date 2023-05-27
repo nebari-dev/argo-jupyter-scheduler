@@ -4,16 +4,13 @@ from multiprocessing import Process
 from typing import Dict, Union
 from urllib.parse import urljoin
 
-import fsspec
-import nbconvert
-import nbformat
 import psutil
 from hera.shared import global_config
-from hera.workflows import DAG, CronWorkflow, Workflow, script
+from hera.workflows import CronWorkflow, Workflow, Container
 from hera.workflows.models import WorkflowMetadata
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
-from jupyter_scheduler.executors import CellExecutionError, ExecutionManager
+from jupyter_scheduler.executors import ExecutionManager
 from jupyter_scheduler.models import (
     CreateJob,
     CreateJobDefinition,
@@ -25,11 +22,9 @@ from jupyter_scheduler.models import (
     UpdateJobDefinition,
 )
 from jupyter_scheduler.orm import Job, JobDefinition
-from jupyter_scheduler.parameterize import add_parameters
 from jupyter_scheduler.scheduler import Scheduler
 from jupyter_scheduler.task_runner import JobDefinitionTask, TaskRunner, UpdateJobDefinitionCache
 from jupyter_server.transutils import _i18n
-from nbconvert.preprocessors import ExecutePreprocessor
 from traitlets import Instance
 from traitlets import Type as TType
 
@@ -160,7 +155,7 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"js-cwf-{job_definition_id}"
 
 
-def create_workflow(job: DescribeJob, staging_paths: str):
+def create_workflow(job: DescribeJob, staging_paths: Dict):
     authenticate()
 
     print(BASIC_LOGGING.format("creating workflow..."))
@@ -169,21 +164,25 @@ def create_workflow(job: DescribeJob, staging_paths: str):
         labels={
             "jupyterflow-override": "true",
             "jupyter-scheduler-job-id": job.job_id,
-            "submitted-by": os.environ.get("JUPYTERHUB_USER", ""),
         }
     )
 
-    with Workflow(name=gen_workflow_name(job.job_id), entrypoint="D", workflow_metadata=metadata) as w:
-        # TODO: replace DAG with Container or standalone script (currently not working)
-        with DAG(name="D") as d:
-            run_notebook(name="run-notebook", arguments={"job": job, "staging_paths": staging_paths})
+    input_path = staging_paths["input"]
+    output_path = os.path.join(input_path, "output", f"{job.job_id}.ipynb")
+
+    with Workflow(name=gen_workflow_name(job.job_id), entrypoint="main", workflow_metadata=metadata) as w:
+        Container(
+            name="main",
+            command=["sh", "-c"],
+            args=["conda", "run", "-n", job.runtime_environment_name, "papermill", input_path, output_path],
+        )
 
     w.create()
 
     print(BASIC_LOGGING.format("workflow created"))
 
 
-def create_cron_workflow(job: DescribeJob, staging_paths: str, job_definition_id: str, schedule: str, timezone: str):
+def create_cron_workflow(job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str):
     authenticate()
 
     print(BASIC_LOGGING.format("creating cron workflow..."))
@@ -192,13 +191,15 @@ def create_cron_workflow(job: DescribeJob, staging_paths: str, job_definition_id
         labels={
             "jupyterflow-override": "true",
             "jupyter-scheduler-job-definition-id": job_definition_id,
-            "submitted-by": os.environ["JUPYTERHUB_USER"],
         }
     )
 
+    input_path = staging_paths["input_path"]
+    output_path = os.path.join(input_path, "output", f"{job.job_id}.ipynb")
+
     with CronWorkflow(
         name=gen_cron_workflow_name(job_definition_id),
-        entrypoint="D",
+        entrypoint="main",
         schedule=schedule,
         timezone=timezone,
         starting_deadline_seconds=0,
@@ -208,9 +209,11 @@ def create_cron_workflow(job: DescribeJob, staging_paths: str, job_definition_id
         cron_suspend=False,
         workflow_metadata=metadata,
     ) as w:
-        with DAG(name="D"):
-            # TODO: replace DAG with Container or standalone script (currently not working)
-            run_notebook(name="run-notebook", arguments={"job": job, "staging_paths": staging_paths})
+        Container(
+            name="main",
+            command=["sh", "-c"],
+            args=["conda", "run", "-n", job.runtime_environment_name, "papermill", input_path, output_path],
+        )
 
     w.create()
 
@@ -245,35 +248,6 @@ def delete_cron_workflow(job_definition_id: str):
     )
 
     print(BASIC_LOGGING.format("cron workflow deleted"))
-
-
-@script()
-def run_notebook(job: DescribeJob, staging_paths: str):
-    # TODO: this is a currently just copy of the existing
-    # Jupyter-Scheduler DefaultExecutor execute() method,
-    # modify this function as needed
-
-    with open(staging_paths["input"], encoding="utf-8") as f:
-        nb = nbformat.read(f, as_version=4)
-
-    if job.parameters:
-        nb = add_parameters(nb, job.parameters)
-
-    ep = ExecutePreprocessor(
-        kernel_name=nb.metadata.kernelspec["name"],
-        store_widget_state=True,
-    )
-
-    try:
-        ep.preprocess(nb)
-    except CellExecutionError as e:
-        raise e
-    finally:
-        for output_format in job.output_formats:
-            cls = nbconvert.get_exporter(output_format)
-            output, resources = cls().from_notebook_node(nb)
-            with fsspec.open(staging_paths[output_format], "w", encoding="utf-8") as f:
-                f.write(output)
 
 
 class ArgoScheduler(Scheduler):
