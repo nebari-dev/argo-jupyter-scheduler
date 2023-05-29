@@ -1,13 +1,14 @@
 import os
 import shutil
+from datetime import datetime
 from multiprocessing import Process
 from typing import Dict, Union
 from urllib.parse import urljoin
 
 import psutil
 from hera.shared import global_config
-from hera.workflows import CronWorkflow, Workflow, Container
-from hera.workflows.models import WorkflowMetadata
+from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow, script
+from hera.workflows.models import ContinueOn
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
 from jupyter_scheduler.executors import ExecutionManager
@@ -98,9 +99,11 @@ class ArgoExecutor(ExecutionManager):
         print(BASIC_LOGGING.format(f"Timezone: {timezone}"))
 
         if schedule:
-            create_cron_workflow(job, self.staging_paths, self.job_definition_id, schedule, timezone)
+            create_cron_workflow(
+                job, self.staging_paths, self.job_definition_id, schedule, timezone, db_url=self.db_url
+            )
         else:
-            create_workflow(job, self.staging_paths)
+            create_workflow(job, self.staging_paths, db_url=self.db_url)
 
     def supported_features(cls) -> Dict[JobFeature, bool]:
         # TODO: determine if all of these features are actually supported
@@ -123,6 +126,10 @@ class ArgoExecutor(ExecutionManager):
     def validate(cls, input_path: str) -> bool:
         # TODO: perform some actual validation
         return True
+
+    def on_complete(self):
+        # Update status of job via Argo-Workflows script
+        pass
 
 
 def authenticate():
@@ -155,47 +162,90 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"js-cwf-{job_definition_id}"
 
 
-def create_workflow(job: DescribeJob, staging_paths: Dict):
+def gen_output_paths(input_path: str, job_id: str):
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    output_dir = os.path.join(input_path.split(".")[-1], "output")
+    papermill_output_path = os.path.join(output_dir, f"{job_id}.ipynb")
+    log_path = os.path.join(output_dir, f"output-logs-{timestamp}.txt")
+    return papermill_output_path, log_path
+
+
+# TODO: update imagae tag
+@script(image="quay.io/nebari/nebari-jupyterlab:awe5")
+def update_job_status(job: DescribeJob, db_url: str, status: str):
+    from jupyter_scheduler.orm import create_session
+    from jupyter_scheduler.utils import get_utc_timestamp
+
+    if status == "Succeeded":
+        with create_session(db_url) as session:
+            session.query(Job).filter(Job.job_id == job.job_id).update(
+                {"status": Status.COMPLETED, "end_time": get_utc_timestamp()}
+            )
+            session.commit()
+
+    elif status == "Failed":
+        with create_session(db_url) as session:
+            session.query(Job).filter(Job.job_id == job.job_id).update(
+                {"status": Status.FAILED, "status_message": "Workflow failed."}
+            )
+            session.commit()
+
+
+def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
     authenticate()
 
     print(BASIC_LOGGING.format("creating workflow..."))
 
-    metadata = WorkflowMetadata(
-        labels={
-            "jupyterflow-override": "true",
-            "jupyter-scheduler-job-id": job.job_id,
-        }
+    labels = {
+        "jupyterflow-override": "true",
+        "jupyter-scheduler-job-id": job.job_id,
+    }
+    input_path = staging_paths["input"]
+    output_path, log_path = gen_output_paths(input_path, job.job_id)
+    conda_env_name = job.runtime_environment_name
+
+    main = Container(
+        name="main",
+        command=["conda"],
+        args=["run", "-n", conda_env_name, "papermill", input_path, output_path, ">", log_path],
     )
 
-    input_path = staging_paths["input"]
-    output_path = os.path.join(input_path, "output", f"{job.job_id}.ipynb")
+    with Workflow(name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels) as w:
+        main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
-    with Workflow(name=gen_workflow_name(job.job_id), entrypoint="main", workflow_metadata=metadata) as w:
-        Container(
-            name="main",
-            command=["sh", "-c"],
-            args=["conda", "run", "-n", job.runtime_environment_name, "papermill", input_path, output_path],
-        )
+        args = {
+            "job": job,
+            "db_url": db_url,
+            "status": main_step.status,
+        }
+
+        Steps(name="steps", sub_steps=[main_step, update_job_status(name="update-status", arguments=args)])
 
     w.create()
 
     print(BASIC_LOGGING.format("workflow created"))
 
 
-def create_cron_workflow(job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str):
+def create_cron_workflow(
+    job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str, db_url: str
+):
     authenticate()
 
     print(BASIC_LOGGING.format("creating cron workflow..."))
 
-    metadata = WorkflowMetadata(
-        labels={
-            "jupyterflow-override": "true",
-            "jupyter-scheduler-job-definition-id": job_definition_id,
-        }
-    )
+    labels = {
+        "jupyterflow-override": "true",
+        "jupyter-scheduler-job-definition-id": job_definition_id,
+    }
+    input_path = staging_paths["input"]
+    output_path, log_path = gen_output_paths(input_path, job.job_id)
+    conda_env_name = job.runtime_environment_name
 
-    input_path = staging_paths["input_path"]
-    output_path = os.path.join(input_path, "output", f"{job.job_id}.ipynb")
+    main = Container(
+        name="main",
+        command=["conda"],
+        args=["run", "-n", conda_env_name, "papermill", input_path, output_path, ">", log_path],
+    )
 
     with CronWorkflow(
         name=gen_cron_workflow_name(job_definition_id),
@@ -207,13 +257,17 @@ def create_cron_workflow(job: DescribeJob, staging_paths: Dict, job_definition_i
         successful_jobs_history_limit=4,
         failed_jobs_history_limit=4,
         cron_suspend=False,
-        workflow_metadata=metadata,
+        labels=labels,
     ) as w:
-        Container(
-            name="main",
-            command=["sh", "-c"],
-            args=["conda", "run", "-n", job.runtime_environment_name, "papermill", input_path, output_path],
-        )
+        main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+
+        args = {
+            "job": job,
+            "db_url": db_url,
+            "status": main_step.status,
+        }
+
+        Steps(name="steps", sub_steps=[main_step, update_job_status(name="update-status", arguments=args)])
 
     w.create()
 
