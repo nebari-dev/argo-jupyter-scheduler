@@ -1,6 +1,5 @@
 import os
 import shutil
-from datetime import datetime
 from multiprocessing import Process
 from typing import Dict, Union
 from urllib.parse import urljoin
@@ -163,11 +162,9 @@ def gen_cron_workflow_name(job_definition_id: str):
 
 
 def gen_output_paths(input_path: str, job_id: str):
-    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-    output_dir = os.path.join(input_path.split(".")[-1], "output")
+    output_dir = os.path.join(input_path.split(".")[0], "output")
     papermill_output_path = os.path.join(output_dir, f"{job_id}.ipynb")
-    log_path = os.path.join(output_dir, f"output-logs-{timestamp}.txt")
-    return papermill_output_path, log_path
+    return papermill_output_path
 
 
 UPDATE_JOB_STATUS_FAILURE_SCRIPT = """
@@ -207,8 +204,10 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
         "jupyter-scheduler-job-id": job.job_id,
     }
     input_path = staging_paths["input"]
-    output_path, log_path = gen_output_paths(input_path, job.job_id)
+    output_path = gen_output_paths(input_path, job.job_id)
     conda_env_name = job.runtime_environment_name
+
+    print(BASIC_LOGGING.format(f"output_path: {output_path}"))
 
     main = Container(
         name="main",
@@ -255,8 +254,10 @@ def create_cron_workflow(
         "jupyter-scheduler-job-definition-id": job_definition_id,
     }
     input_path = staging_paths["input"]
-    output_path, log_path = gen_output_paths(input_path, job.job_id)
+    output_path = gen_output_paths(input_path, job.job_id)
     conda_env_name = job.runtime_environment_name
+
+    print(BASIC_LOGGING.format(f"output_path: {output_path}"))
 
     main = Container(
         name="main",
@@ -307,12 +308,18 @@ def delete_workflow(job_id: str):
 
     print(BASIC_LOGGING.format("deleting workflow..."))
 
-    wfs = WorkflowsService()
-
-    wfs.delete_workflow(
-        name=gen_workflow_name(job_id),
-        namespace=global_config.namespace,
-    )
+    try:
+        wfs = WorkflowsService()
+        wfs.delete_workflow(
+            name=gen_workflow_name(job_id),
+            namespace=global_config.namespace,
+        )
+    except Exception as e:
+        # Hera-Workflows raises generic Exception for all errors :(
+        if str(e).startswith("Server returned status code"):
+            print(BASIC_LOGGING.format(e))
+        else:
+            raise e
 
     print(BASIC_LOGGING.format("workflow deleted"))
 
@@ -322,12 +329,18 @@ def delete_cron_workflow(job_definition_id: str):
 
     print(BASIC_LOGGING.format("deleting cron workflow..."))
 
-    wfs = WorkflowsService()
-
-    wfs.delete_cron_workflow(
-        name=gen_cron_workflow_name(job_definition_id),
-        namespace=global_config.namespace,
-    )
+    try:
+        wfs = WorkflowsService()
+        wfs.delete_cron_workflow(
+            name=gen_cron_workflow_name(job_definition_id),
+            namespace=global_config.namespace,
+        )
+    except Exception as e:
+        # Hera-Workflows raises generic Exception for all errors :(
+        if str(e).startswith("Server returned status code"):
+            print(BASIC_LOGGING.format(e))
+        else:
+            raise e
 
     print(BASIC_LOGGING.format("cron workflow deleted"))
 
@@ -463,7 +476,7 @@ class ArgoScheduler(Scheduler):
         if self.task_runner and job_definition.schedule:
             self.task_runner.add_job_definition(job_definition_id)
 
-        self.create_cron_job_from_definition(job_definition_id, job_definition)
+        self.create_cron_job_from_definition(job_definition_id)
 
         return job_definition_id
 
