@@ -23,50 +23,11 @@ from jupyter_scheduler.models import (
 )
 from jupyter_scheduler.orm import Job, JobDefinition
 from jupyter_scheduler.scheduler import Scheduler
-from jupyter_scheduler.task_runner import JobDefinitionTask, TaskRunner, UpdateJobDefinitionCache
 from jupyter_server.transutils import _i18n
 from traitlets import Instance
 from traitlets import Type as TType
 
 BASIC_LOGGING = "argo-workflows-executor : {}"
-
-
-class ArgoTaskRunner(TaskRunner):
-    def process_queue(self):
-        print(BASIC_LOGGING.format("Start process_queue..."))
-        self.log.debug(self.queue)
-        while not self.queue.isempty():
-            print(BASIC_LOGGING.format("** Processing queue **"))
-            task = self.queue.peek()
-            cache = self.cache.get(task.job_definition_id)
-
-            if not cache:
-                self.queue.pop()
-                continue
-
-            cache_run_time = cache.next_run_time
-            queue_run_time = task.next_run_time
-
-            if not cache.active or queue_run_time != cache_run_time:
-                self.queue.pop()
-                continue
-
-            time_diff = self.compute_time_diff(queue_run_time, cache.timezone)
-
-            # if run time is in future
-            if time_diff < 0:
-                break
-            else:
-                try:
-                    # self.create_job(task.job_definition_id)
-                    # TODO: check that the Argo CronWorkflow is still running
-                    pass
-                except Exception as e:
-                    self.log.exception(e)
-                self.queue.pop()
-                run_time = self.compute_next_run_time(cache.schedule, cache.timezone)
-                self.cache.update(task.job_definition_id, UpdateJobDefinitionCache(next_run_time=run_time))
-                self.queue.push(JobDefinitionTask(job_definition_id=task.job_definition_id, next_run_time=run_time))
 
 
 class ArgoExecutor(ExecutionManager):
@@ -354,10 +315,11 @@ class ArgoScheduler(Scheduler):
         help=_i18n("The execution manager class to use."),
     )
 
+    # Disabale TaskRunner since scheduled jobs will be hanled by CronWorkflows instead
     task_runner_class = TType(
         allow_none=True,
         config=True,
-        default_value=ArgoTaskRunner,
+        default_value=None,
         klass="jupyter_scheduler.task_runner.BaseTaskRunner",
         help=_i18n("The class that handles the job creation of scheduled jobs from job definitions."),
     )
@@ -405,6 +367,8 @@ class ArgoScheduler(Scheduler):
                 ).process
             )
             p.start()
+
+            job.tags = [" Cron-Job; to remove, delete Job Definition "]
 
             job.pid = p.pid
             session.commit()
@@ -464,6 +428,8 @@ class ArgoScheduler(Scheduler):
                 raise InputUriError(model.input_uri)
 
             job_definition = JobDefinition(**model.dict(exclude_none=True, exclude={"input_uri"}))
+
+            job_definition.tags = [" Cron-Job; to remove, delete Job Definition "]
 
             session.add(job_definition)
             session.commit()
@@ -542,7 +508,7 @@ class ArgoScheduler(Scheduler):
         delete_cron_workflow(job_definition_id)
 
     def create_cron_job_from_definition(self, job_definition_id: str) -> str:
-        print(BASIC_LOGGING.format("ArgoScheduler.create_job_from_definition"))
+        print(BASIC_LOGGING.format("ArgoScheduler.create_cron_job_from_definition"))
         job_id = None
         definition = self.get_job_definition(job_definition_id)
         schedule = definition.schedule
