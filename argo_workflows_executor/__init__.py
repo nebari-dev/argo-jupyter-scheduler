@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 import psutil
 from hera.shared import global_config
-from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow, script
+from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow
 from hera.workflows.models import ContinueOn
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
@@ -170,25 +170,31 @@ def gen_output_paths(input_path: str, job_id: str):
     return papermill_output_path, log_path
 
 
-# TODO: update imagae tag
-@script(image="quay.io/nebari/nebari-jupyterlab:awe5")
-def update_job_status(job: DescribeJob, db_url: str, status: str):
-    from jupyter_scheduler.orm import create_session
-    from jupyter_scheduler.utils import get_utc_timestamp
+UPDATE_JOB_STATUS_FAILURE_SCRIPT = """
+from jupyter_scheduler.orm import create_session, Job;
+from jupyter_scheduler.utils import get_utc_timestamp;
+from jupyter_scheduler.models import Status;
 
-    if status == "Succeeded":
-        with create_session(db_url) as session:
-            session.query(Job).filter(Job.job_id == job.job_id).update(
-                {"status": Status.COMPLETED, "end_time": get_utc_timestamp()}
-            )
-            session.commit()
+db_session = create_session(db_url);
+with db_session() as session:
+    session.query(Job).filter(Job.job_id == job_id).update(
+        {"status": Status.FAILED, "status_message": "Workflow failed."}
+    );
+    session.commit();
+"""
 
-    elif status == "Failed":
-        with create_session(db_url) as session:
-            session.query(Job).filter(Job.job_id == job.job_id).update(
-                {"status": Status.FAILED, "status_message": "Workflow failed."}
-            )
-            session.commit()
+UPDATE_JOB_STATUS_SUCCESS_SCRIPT = """
+from jupyter_scheduler.orm import create_session, Job;
+from jupyter_scheduler.utils import get_utc_timestamp;
+from jupyter_scheduler.models import Status;
+
+db_session = create_session(db_url);
+with db_session() as session:
+    session.query(Job).filter(Job.job_id == job_id).update(
+        {"status": Status.COMPLETED, "end_time": get_utc_timestamp()}
+    );
+    session.commit();
+"""
 
 
 def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
@@ -207,19 +213,30 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
     main = Container(
         name="main",
         command=["conda"],
-        args=["run", "-n", conda_env_name, "papermill", input_path, output_path, ">", log_path],
+        args=["run", "-n", conda_env_name, "papermill", input_path, output_path],
+    )
+
+    failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
+    success_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_SUCCESS_SCRIPT
+
+    update_job_status_failure = Container(
+        name="update-status-failure", command=["python"], args=["-c", failure_script_args]
+    )
+
+    update_job_status_success = Container(
+        name="update-status-success", command=["python"], args=["-c", success_script_args]
     )
 
     with Workflow(name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels) as w:
         main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
-        args = {
-            "job": job,
-            "db_url": db_url,
-            "status": main_step.status,
-        }
+        successful = "{{steps.main.status}} == Succeeded"
+        failure = "{{steps.main.status}} == Failed"
 
-        Steps(name="steps", sub_steps=[main_step, update_job_status(name="update-status", arguments=args)])
+        failure_step = Step(name="failure-step", template=update_job_status_failure, when=failure)
+        success_step = Step(name="success-step", template=update_job_status_success, when=successful)
+
+        Steps(name="steps", sub_steps=[main_step, success_step, failure_step])
 
     w.create()
 
@@ -244,12 +261,23 @@ def create_cron_workflow(
     main = Container(
         name="main",
         command=["conda"],
-        args=["run", "-n", conda_env_name, "papermill", input_path, output_path, ">", log_path],
+        args=["run", "-n", conda_env_name, "papermill", input_path, output_path],
+    )
+
+    failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
+    success_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_SUCCESS_SCRIPT
+
+    update_job_status_failure = Container(
+        name="update-status-failure", command=["python"], args=["-c", failure_script_args]
+    )
+
+    update_job_status_success = Container(
+        name="update-status-success", command=["python"], args=["-c", success_script_args]
     )
 
     with CronWorkflow(
         name=gen_cron_workflow_name(job_definition_id),
-        entrypoint="main",
+        entrypoint="steps",
         schedule=schedule,
         timezone=timezone,
         starting_deadline_seconds=0,
@@ -261,13 +289,13 @@ def create_cron_workflow(
     ) as w:
         main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
-        args = {
-            "job": job,
-            "db_url": db_url,
-            "status": main_step.status,
-        }
+        successful = "{{steps.main.status}} == Succeeded"
+        failure = "{{steps.main.status}} == Failed"
 
-        Steps(name="steps", sub_steps=[main_step, update_job_status(name="update-status", arguments=args)])
+        failure_step = Step(name="failure-step", template=update_job_status_failure, when=failure)
+        success_step = Step(name="success-step", template=update_job_status_success, when=successful)
+
+        Steps(name="steps", sub_steps=[main_step, success_step, failure_step])
 
     w.create()
 
