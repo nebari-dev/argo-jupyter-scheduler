@@ -3,11 +3,12 @@ import shutil
 from multiprocessing import Process
 from typing import Dict, Union
 from urllib.parse import urljoin
+from pathlib import Path
 
 import psutil
 from hera.shared import global_config
 from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow
-from hera.workflows.models import ContinueOn, UpdateCronWorkflowRequest
+from hera.workflows.models import ContinueOn
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
 from jupyter_scheduler.executors import ExecutionManager
@@ -66,6 +67,7 @@ class ArgoTaskRunner(TaskRunner):
                 run_time = self.compute_next_run_time(cache.schedule, cache.timezone)
                 self.cache.update(task.job_definition_id, UpdateJobDefinitionCache(next_run_time=run_time))
                 self.queue.push(JobDefinitionTask(job_definition_id=task.job_definition_id, next_run_time=run_time))
+
 
 class ArgoExecutor(ExecutionManager):
     def __init__(
@@ -159,10 +161,9 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"js-cwf-{job_definition_id}"
 
 
-def gen_output_paths(input_path: str, job_id: str):
-    output_dir = os.path.join(input_path.split(".")[0], "output")
-    papermill_output_path = os.path.join(output_dir, f"{job_id}.ipynb")
-    return papermill_output_path
+def gen_output_paths(input_path: str):
+    p = Path(input_path)
+    return str(p.parent / "output.ipynb")
 
 
 UPDATE_JOB_STATUS_FAILURE_SCRIPT = """
@@ -202,7 +203,7 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
         "jupyter-scheduler-job-id": job.job_id,
     }
     input_path = staging_paths["input"]
-    output_path = gen_output_paths(input_path, job.job_id)
+    output_path = gen_output_paths(input_path)
     conda_env_name = job.runtime_environment_name
 
     print(BASIC_LOGGING.format(f"output_path: {output_path}"))
@@ -241,19 +242,18 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
 
 
 def create_cron_workflow(
-    job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str, db_url: str, create: bool = True,
+    job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str, db_url: str
 ):
     authenticate()
 
-    if create:
-        print(BASIC_LOGGING.format("creating cron workflow..."))
+    print(BASIC_LOGGING.format("creating cron workflow..."))
 
     labels = {
         "jupyterflow-override": "true",
         "jupyter-scheduler-job-definition-id": job_definition_id,
     }
     input_path = staging_paths["input"]
-    output_path = gen_output_paths(input_path, job.job_id)
+    output_path = gen_output_paths(input_path)
     conda_env_name = job.runtime_environment_name
 
     print(BASIC_LOGGING.format(f"output_path: {output_path}"))
@@ -297,11 +297,12 @@ def create_cron_workflow(
 
         Steps(name="steps", sub_steps=[main_step, success_step, failure_step])
 
-    if create:
-        w.create()
-        print(BASIC_LOGGING.format("cron workflow created"))
+    w.create()
+
+    print(BASIC_LOGGING.format("cron workflow created"))
 
     return w
+
 
 def delete_workflow(job_id: str):
     global_config = authenticate()
