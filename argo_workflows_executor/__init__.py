@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 import psutil
 from hera.shared import global_config
 from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow
-from hera.workflows.models import ContinueOn
+from hera.workflows.models import ContinueOn, UpdateCronWorkflowRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
 from jupyter_scheduler.executors import ExecutionManager
@@ -23,12 +23,49 @@ from jupyter_scheduler.models import (
 )
 from jupyter_scheduler.orm import Job, JobDefinition
 from jupyter_scheduler.scheduler import Scheduler
+from jupyter_scheduler.task_runner import JobDefinitionTask, TaskRunner, UpdateJobDefinitionCache
 from jupyter_server.transutils import _i18n
 from traitlets import Instance
 from traitlets import Type as TType
 
 BASIC_LOGGING = "argo-workflows-executor : {}"
 
+
+class ArgoTaskRunner(TaskRunner):
+    def process_queue(self):
+        print(BASIC_LOGGING.format("Start process_queue..."))
+        self.log.debug(self.queue)
+        while not self.queue.isempty():
+            print(BASIC_LOGGING.format("** Processing queue **"))
+            task = self.queue.peek()
+            cache = self.cache.get(task.job_definition_id)
+
+            if not cache:
+                self.queue.pop()
+                continue
+
+            cache_run_time = cache.next_run_time
+            queue_run_time = task.next_run_time
+
+            if not cache.active or queue_run_time != cache_run_time:
+                self.queue.pop()
+                continue
+
+            time_diff = self.compute_time_diff(queue_run_time, cache.timezone)
+
+            # if run time is in future
+            if time_diff < 0:
+                break
+            else:
+                try:
+                    # TODO: check that the Argo CronWorkflow is still running
+                    pass
+                except Exception as e:
+                    self.log.exception(e)
+                self.queue.pop()
+                run_time = self.compute_next_run_time(cache.schedule, cache.timezone)
+                self.cache.update(task.job_definition_id, UpdateJobDefinitionCache(next_run_time=run_time))
+                self.queue.push(JobDefinitionTask(job_definition_id=task.job_definition_id, next_run_time=run_time))
 
 class ArgoExecutor(ExecutionManager):
     def __init__(
@@ -204,11 +241,12 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
 
 
 def create_cron_workflow(
-    job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str, db_url: str
+    job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str, db_url: str, create: bool = True,
 ):
     authenticate()
 
-    print(BASIC_LOGGING.format("creating cron workflow..."))
+    if create:
+        print(BASIC_LOGGING.format("creating cron workflow..."))
 
     labels = {
         "jupyterflow-override": "true",
@@ -259,10 +297,11 @@ def create_cron_workflow(
 
         Steps(name="steps", sub_steps=[main_step, success_step, failure_step])
 
-    w.create()
+    if create:
+        w.create()
+        print(BASIC_LOGGING.format("cron workflow created"))
 
-    print(BASIC_LOGGING.format("cron workflow created"))
-
+    return w
 
 def delete_workflow(job_id: str):
     global_config = authenticate()
@@ -315,11 +354,10 @@ class ArgoScheduler(Scheduler):
         help=_i18n("The execution manager class to use."),
     )
 
-    # Disabale TaskRunner since scheduled jobs will be hanled by CronWorkflows instead
     task_runner_class = TType(
         allow_none=True,
         config=True,
-        default_value=None,
+        default_value=ArgoTaskRunner,
         klass="jupyter_scheduler.task_runner.BaseTaskRunner",
         help=_i18n("The class that handles the job creation of scheduled jobs from job definitions."),
     )
