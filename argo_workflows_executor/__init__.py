@@ -1,13 +1,13 @@
 import os
 import shutil
 from multiprocessing import Process
+from pathlib import Path
 from typing import Dict, Union
 from urllib.parse import urljoin
-from pathlib import Path
 
 import psutil
 from hera.shared import global_config
-from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow
+from hera.workflows import Container, CronWorkflow, SecretEnv, Step, Steps, Workflow
 from hera.workflows.models import ContinueOn
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
@@ -161,9 +161,41 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"js-cwf-{job_definition_id}"
 
 
-def gen_output_paths(input_path: str):
+def gen_output_path(input_path: str):
     p = Path(input_path)
     return str(p.parent / "output.ipynb")
+
+
+def gen_log_path(input_path: str):
+    p = Path(input_path)
+    return str(p.parent / "logs.txt")
+
+
+def gen_conda_env_path(conda_env_name):
+    # TODO: initial implementation, rely on conda-store API for more robust results
+    conda_env = conda_env_name.split("-", 1)
+    if len(conda_env) == 2:
+        env_namespace = conda_env[0]
+        return f"/home/conda/{env_namespace}/envs/{conda_env_name}"
+
+    else:
+        print(BASIC_LOGGING.format(f"Conda environment `{conda_env_name}` not found, falling back to `default`."))
+        return "/opt/conda/envs/default"
+
+
+def gen_papermill_command_input(conda_env_name, input_path):
+    output_path = gen_output_path(input_path)
+    log_path = gen_log_path(input_path)
+    conda_env_path = gen_conda_env_path(conda_env_name)
+    # TODO: parameterize kernel
+    kernel_name = "python3"
+
+    print(BASIC_LOGGING.format(f"conda_env_name: {conda_env_name}"))
+    print(BASIC_LOGGING.format(f"conda_env_path: {conda_env_path}"))
+    print(BASIC_LOGGING.format(f"output_path: {output_path}"))
+    print(BASIC_LOGGING.format(f"log_path: {log_path}"))
+
+    return f"conda run -p {conda_env_path} papermill -k {kernel_name} {input_path} {output_path} &> {log_path}"
 
 
 UPDATE_JOB_STATUS_FAILURE_SCRIPT = """
@@ -201,17 +233,28 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
     labels = {
         "jupyterflow-override": "true",
         "jupyter-scheduler-job-id": job.job_id,
+        "workflows.argoproj.io/creator-preferred-username": os.environ["PREFERRED_USERNAME"],
     }
-    input_path = staging_paths["input"]
-    output_path = gen_output_paths(input_path)
     conda_env_name = job.runtime_environment_name
+    cmd_args = gen_papermill_command_input(conda_env_name, staging_paths["input"])
 
-    print(BASIC_LOGGING.format(f"output_path: {output_path}"))
+    conda_store_token = SecretEnv(
+        name="CONDA_STORE_TOKEN",
+        secret_key="conda-store-api-token",
+        secret_name="argo-workflows-conda-store-token",
+    )
+
+    conda_store_service = SecretEnv(
+        name="CONDA_STORE_SERVICE",
+        secret_key="conda-store-service-name",
+        secret_name="argo-workflows-conda-store-token",
+    )
 
     main = Container(
         name="main",
-        command=["conda"],
-        args=["run", "-n", conda_env_name, "papermill", input_path, output_path],
+        command=["/bin/sh"],
+        args=["-c", cmd_args],
+        # env= [conda_store_token, conda_store_service],
     )
 
     failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
@@ -220,20 +263,17 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
     update_job_status_failure = Container(
         name="update-status-failure", command=["python"], args=["-c", failure_script_args]
     )
-
     update_job_status_success = Container(
         name="update-status-success", command=["python"], args=["-c", success_script_args]
     )
 
+    failure = "{{steps.main.status}} == Failed"
+    successful = "{{steps.main.status}} == Succeeded"
+
     with Workflow(name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels) as w:
         main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
-
-        successful = "{{steps.main.status}} == Succeeded"
-        failure = "{{steps.main.status}} == Failed"
-
         failure_step = Step(name="failure-step", template=update_job_status_failure, when=failure)
         success_step = Step(name="success-step", template=update_job_status_success, when=successful)
-
         Steps(name="steps", sub_steps=[main_step, success_step, failure_step])
 
     w.create()
@@ -251,17 +291,28 @@ def create_cron_workflow(
     labels = {
         "jupyterflow-override": "true",
         "jupyter-scheduler-job-definition-id": job_definition_id,
+        "workflows.argoproj.io/creator-preferred-username": os.environ["PREFERRED_USERNAME"],
     }
-    input_path = staging_paths["input"]
-    output_path = gen_output_paths(input_path)
     conda_env_name = job.runtime_environment_name
+    cmd_args = gen_papermill_command_input(conda_env_name, staging_paths["input"])
 
-    print(BASIC_LOGGING.format(f"output_path: {output_path}"))
+    conda_store_token = SecretEnv(
+        name="CONDA_STORE_TOKEN",
+        secret_key="conda-store-api-token",
+        secret_name="argo-workflows-conda-store-token",
+    )
+
+    conda_store_service = SecretEnv(
+        name="CONDA_STORE_SERVICE",
+        secret_key="conda-store-service-name",
+        secret_name="argo-workflows-conda-store-token",
+    )
 
     main = Container(
         name="main",
-        command=["conda"],
-        args=["run", "-n", conda_env_name, "papermill", input_path, output_path],
+        command=["/bin/sh"],
+        args=["-c", cmd_args],
+        # env= [conda_store_token, conda_store_service],
     )
 
     failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
@@ -270,10 +321,12 @@ def create_cron_workflow(
     update_job_status_failure = Container(
         name="update-status-failure", command=["python"], args=["-c", failure_script_args]
     )
-
     update_job_status_success = Container(
         name="update-status-success", command=["python"], args=["-c", success_script_args]
     )
+
+    failure = "{{steps.main.status}} == Failed"
+    successful = "{{steps.main.status}} == Succeeded"
 
     with CronWorkflow(
         name=gen_cron_workflow_name(job_definition_id),
@@ -288,13 +341,8 @@ def create_cron_workflow(
         labels=labels,
     ) as w:
         main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
-
-        successful = "{{steps.main.status}} == Succeeded"
-        failure = "{{steps.main.status}} == Failed"
-
         failure_step = Step(name="failure-step", template=update_job_status_failure, when=failure)
         success_step = Step(name="success-step", template=update_job_status_success, when=successful)
-
         Steps(name="steps", sub_steps=[main_step, success_step, failure_step])
 
     w.create()
