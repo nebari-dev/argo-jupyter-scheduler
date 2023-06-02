@@ -184,22 +184,6 @@ def gen_log_path(input_path: str):
     return str(p.parent / "logs.txt")
 
 
-def add_conda_store_envs():
-    conda_store_token = SecretEnv(
-        name=CONDA_STORE_TOKEN,
-        secret_key="conda-store-api-token",
-        secret_name="argo-workflows-conda-store-token",
-    )
-
-    conda_store_service = SecretEnv(
-        name=CONDA_STORE_SERVICE,
-        secret_key="conda-store-service-name",
-        secret_name="argo-workflows-conda-store-token",
-    )
-
-    return [conda_store_token, conda_store_service]
-
-
 def send_request(api_v1_endpoint):
     token = os.environ[CONDA_STORE_TOKEN]
     conda_store_service_name = os.environ[CONDA_STORE_SERVICE]
@@ -321,15 +305,11 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str, use_cond
     cmd_args = ["-c"] + gen_papermill_command_input(
         job.runtime_environment_name, staging_paths["input"], use_conda_store_env
     )
-    env_vars = []
-    if use_conda_store_env:
-        env_vars.append(add_conda_store_envs())
 
     main = Container(
         name="main",
         command=["/bin/sh"],
         args=cmd_args,
-        env=env_vars,
     )
 
     failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
@@ -377,15 +357,11 @@ def create_cron_workflow(
     cmd_args = ["-c"] + gen_papermill_command_input(
         job.runtime_environment_name, staging_paths["input"], use_conda_store_env
     )
-    env_vars = []
-    if use_conda_store_env:
-        env_vars.append(add_conda_store_envs())
 
     main = Container(
         name="main",
         command=["/bin/sh"],
         args=cmd_args,
-        env=env_vars,
     )
 
     failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
