@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from multiprocessing import Process
@@ -6,6 +7,7 @@ from typing import Dict, Union
 from urllib.parse import urljoin
 
 import psutil
+import urllib3
 from hera.shared import global_config
 from hera.workflows import Container, CronWorkflow, SecretEnv, Step, Steps, Workflow
 from hera.workflows.models import ContinueOn
@@ -26,10 +28,13 @@ from jupyter_scheduler.orm import Job, JobDefinition
 from jupyter_scheduler.scheduler import Scheduler
 from jupyter_scheduler.task_runner import JobDefinitionTask, TaskRunner, UpdateJobDefinitionCache
 from jupyter_server.transutils import _i18n
-from traitlets import Instance
+from traitlets import Bool, Instance
 from traitlets import Type as TType
+from urllib3.exceptions import ConnectionError
 
 BASIC_LOGGING = "argo-workflows-executor : {}"
+CONDA_STORE_TOKEN = "CONDA_STORE_TOKEN"
+CONDA_STORE_SERVICE = "CONDA_STORE_SERVICE"
 
 
 class ArgoTaskRunner(TaskRunner):
@@ -79,6 +84,7 @@ class ArgoExecutor(ExecutionManager):
         job_definition_id: Union[str, None] = None,
         schedule: Union[str, None] = None,
         timezone: Union[str, None] = None,
+        use_conda_store_env: bool = False,
     ):
         self.job_id = job_id
         self.staging_paths = staging_paths
@@ -87,6 +93,7 @@ class ArgoExecutor(ExecutionManager):
         self.job_definition_id = job_definition_id
         self.schedule = schedule
         self.timezone = timezone
+        self.use_conda_store_env = use_conda_store_env
 
     def execute(self):
         job = self.model
@@ -99,10 +106,16 @@ class ArgoExecutor(ExecutionManager):
 
         if schedule:
             create_cron_workflow(
-                job, self.staging_paths, self.job_definition_id, schedule, timezone, db_url=self.db_url
+                job,
+                self.staging_paths,
+                self.job_definition_id,
+                schedule,
+                timezone,
+                db_url=self.db_url,
+                use_conda_store_env=self.use_conda_store_env,
             )
         else:
-            create_workflow(job, self.staging_paths, db_url=self.db_url)
+            create_workflow(job, self.staging_paths, db_url=self.db_url, use_conda_store_env=self.use_conda_store_env)
 
     def supported_features(cls) -> Dict[JobFeature, bool]:
         # TODO: determine if all of these features are actually supported
@@ -171,31 +184,101 @@ def gen_log_path(input_path: str):
     return str(p.parent / "logs.txt")
 
 
-def gen_conda_env_path(conda_env_name):
-    # TODO: initial implementation, rely on conda-store API for more robust results
-    conda_env = conda_env_name.split("-", 1)
-    if len(conda_env) == 2:
-        env_namespace = conda_env[0]
-        return f"/home/conda/{env_namespace}/envs/{conda_env_name}"
+def add_conda_store_envs():
+    conda_store_token = SecretEnv(
+        name=CONDA_STORE_TOKEN,
+        secret_key="conda-store-api-token",
+        secret_name="argo-workflows-conda-store-token",
+    )
+
+    conda_store_service = SecretEnv(
+        name=CONDA_STORE_SERVICE,
+        secret_key="conda-store-service-name",
+        secret_name="argo-workflows-conda-store-token",
+    )
+
+    return [conda_store_token, conda_store_service]
+
+
+def send_request(api_v1_endpoint):
+    token = os.environ[CONDA_STORE_TOKEN]
+    conda_store_service_name = os.environ[CONDA_STORE_SERVICE]
+
+    conda_store_service_name, conda_store_service_port = conda_store_service_name.split(":")
+    conda_store_endpoint = f"http://{conda_store_service_name}.dev.svc:{conda_store_service_port}/conda-store/api/v1/"
+    url = urljoin(conda_store_endpoint, api_v1_endpoint)
+
+    http = urllib3.PoolManager()
+    response = http.request("GET", url, headers={"Authorization": f"Bearer {token}"})
+
+    j = json.loads(response.data.decode("UTF-8"))
+
+    try:
+        return j["data"]
+    except KeyError as e:
+        raise ConnectionError(e)
+
+
+def gen_conda_env_path(conda_env_name: str, use_conda_store_env: bool = True):
+    # TODO: validate that `papermill` is in the specified conda environment
+    CONDA_ENV_LOCATION = "/opt/conda/envs/{conda_env_name}"
+    DEFAULT_ENV = "default"
+
+    if use_conda_store_env:
+        CONDA_STORE_ENV_LOCATION = "/home/conda/{env_namespace}/envs/{conda_env_name}"
+        try:
+            conda_store_envs = send_request("environment")
+
+            available_ns = []
+            available_env_names = []
+            available_envs = []
+            for i in conda_store_envs:
+                available_ns.append(i["namespace"]["name"])
+                available_env_names.append(i["name"])
+                available_envs.append(f'{i["namespace"]["name"]}-{i["name"]}')
+
+            def _valid_env(
+                s, available_ns=available_ns, available_env_names=available_env_names, available_envs=available_envs
+            ):
+                parts = s.split('-')
+                for i in range(1, len(parts)):
+                    namespace = '-'.join(parts[:i])
+                    name = '-'.join(parts[i:])
+                    if namespace in available_ns and name in available_env_names and s in available_envs:
+                        return namespace, name
+                return False
+
+            env_namespace_name = _valid_env(conda_env_name)
+            if env_namespace_name:
+                env_namespace, _ = env_namespace_name
+                return CONDA_STORE_ENV_LOCATION.format(env_namespace=env_namespace, conda_env_name=conda_env_name)
+
+        except ConnectionError as e:
+            print(BASIC_LOGGING.format(f"Unable to connect to conda-store. Encountered error:\n{e}"))
 
     else:
-        print(BASIC_LOGGING.format(f"Conda environment `{conda_env_name}` not found, falling back to `default`."))
-        return "/opt/conda/envs/default"
+        conda_env_path = Path(CONDA_ENV_LOCATION.format(conda_env_name=conda_env_name))
+        if conda_env_path.exists():
+            return conda_env_path
+
+    print(BASIC_LOGGING.format(f"Conda environment `{conda_env_name}` not found, falling back to `{DEFAULT_ENV}`."))
+    return CONDA_ENV_LOCATION.format(conda_env_name=DEFAULT_ENV)
 
 
-def gen_papermill_command_input(conda_env_name, input_path):
+def gen_papermill_command_input(conda_env_name: str, input_path: str, use_conda_store_env: bool = True):
+    # TODO: allow overrides
+    kernel_name = "python3"
+
     output_path = gen_output_path(input_path)
     log_path = gen_log_path(input_path)
-    conda_env_path = gen_conda_env_path(conda_env_name)
-    # TODO: parameterize kernel
-    kernel_name = "python3"
+    conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
 
     print(BASIC_LOGGING.format(f"conda_env_name: {conda_env_name}"))
     print(BASIC_LOGGING.format(f"conda_env_path: {conda_env_path}"))
     print(BASIC_LOGGING.format(f"output_path: {output_path}"))
     print(BASIC_LOGGING.format(f"log_path: {log_path}"))
 
-    return f"conda run -p {conda_env_path} papermill -k {kernel_name} {input_path} {output_path} &> {log_path}"
+    return [f"conda run -p {conda_env_path} papermill -k {kernel_name} {input_path} {output_path}", "&>", log_path]
 
 
 UPDATE_JOB_STATUS_FAILURE_SCRIPT = """
@@ -225,7 +308,7 @@ with db_session() as session:
 """
 
 
-def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
+def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str, use_conda_store_env: bool = True):
     authenticate()
 
     print(BASIC_LOGGING.format("creating workflow..."))
@@ -235,26 +318,18 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
         "jupyter-scheduler-job-id": job.job_id,
         "workflows.argoproj.io/creator-preferred-username": os.environ["PREFERRED_USERNAME"],
     }
-    conda_env_name = job.runtime_environment_name
-    cmd_args = gen_papermill_command_input(conda_env_name, staging_paths["input"])
-
-    conda_store_token = SecretEnv(
-        name="CONDA_STORE_TOKEN",
-        secret_key="conda-store-api-token",
-        secret_name="argo-workflows-conda-store-token",
+    cmd_args = ["-c"] + gen_papermill_command_input(
+        job.runtime_environment_name, staging_paths["input"], use_conda_store_env
     )
-
-    conda_store_service = SecretEnv(
-        name="CONDA_STORE_SERVICE",
-        secret_key="conda-store-service-name",
-        secret_name="argo-workflows-conda-store-token",
-    )
+    env_vars = []
+    if use_conda_store_env:
+        env_vars.append(add_conda_store_envs())
 
     main = Container(
         name="main",
         command=["/bin/sh"],
-        args=["-c", cmd_args],
-        # env= [conda_store_token, conda_store_service],
+        args=cmd_args,
+        env=env_vars,
     )
 
     failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
@@ -282,7 +357,13 @@ def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str):
 
 
 def create_cron_workflow(
-    job: DescribeJob, staging_paths: Dict, job_definition_id: str, schedule: str, timezone: str, db_url: str
+    job: DescribeJob,
+    staging_paths: Dict,
+    job_definition_id: str,
+    schedule: str,
+    timezone: str,
+    db_url: str,
+    use_conda_store_env: bool = True,
 ):
     authenticate()
 
@@ -293,26 +374,18 @@ def create_cron_workflow(
         "jupyter-scheduler-job-definition-id": job_definition_id,
         "workflows.argoproj.io/creator-preferred-username": os.environ["PREFERRED_USERNAME"],
     }
-    conda_env_name = job.runtime_environment_name
-    cmd_args = gen_papermill_command_input(conda_env_name, staging_paths["input"])
-
-    conda_store_token = SecretEnv(
-        name="CONDA_STORE_TOKEN",
-        secret_key="conda-store-api-token",
-        secret_name="argo-workflows-conda-store-token",
+    cmd_args = ["-c"] + gen_papermill_command_input(
+        job.runtime_environment_name, staging_paths["input"], use_conda_store_env
     )
-
-    conda_store_service = SecretEnv(
-        name="CONDA_STORE_SERVICE",
-        secret_key="conda-store-service-name",
-        secret_name="argo-workflows-conda-store-token",
-    )
+    env_vars = []
+    if use_conda_store_env:
+        env_vars.append(add_conda_store_envs())
 
     main = Container(
         name="main",
         command=["/bin/sh"],
-        args=["-c", cmd_args],
-        # env= [conda_store_token, conda_store_service],
+        args=cmd_args,
+        env=env_vars,
     )
 
     failure_script_args = f"""db_url = "{db_url}"; job_id = "{job.job_id}"; """ + UPDATE_JOB_STATUS_FAILURE_SCRIPT
@@ -395,6 +468,12 @@ def delete_cron_workflow(job_definition_id: str):
 
 
 class ArgoScheduler(Scheduler):
+    use_conda_store_env = Bool(
+        default_value=False,
+        config=True,
+        help="Whether to attempt check if conda environment is available from conda-store.",
+    )
+
     execution_manager_class = TType(
         allow_none=True,
         klass="jupyter_scheduler.executors.ExecutionManager",
@@ -412,6 +491,52 @@ class ArgoScheduler(Scheduler):
     )
 
     task_runner = Instance(allow_none=True, klass="jupyter_scheduler.task_runner.BaseTaskRunner")
+
+    def create_job(self, model: CreateJob) -> str:
+        if not model.job_definition_id and not self.file_exists(model.input_uri):
+            raise InputUriError(model.input_uri)
+
+        input_path = os.path.join(self.root_dir, model.input_uri)
+        if not self.execution_manager_class.validate(self.execution_manager_class, input_path):
+            raise SchedulerError(
+                """There is no kernel associated with the notebook. Please open
+                    the notebook, select a kernel, and re-submit the job to execute.
+                    """
+            )
+
+        with self.db_session() as session:
+            if model.idempotency_token:
+                job = session.query(Job).filter(Job.idempotency_token == model.idempotency_token).first()
+                if job:
+                    raise IdempotencyTokenError(model.idempotency_token)
+
+            if not model.output_formats:
+                model.output_formats = []
+
+            job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
+            session.add(job)
+            session.commit()
+
+            staging_paths = self.get_staging_paths(DescribeJob.from_orm(job))
+            self.copy_input_file(model.input_uri, staging_paths["input"])
+
+            p = Process(
+                target=self.execution_manager_class(
+                    job_id=job.job_id,
+                    staging_paths=staging_paths,
+                    root_dir=self.root_dir,
+                    db_url=self.db_url,
+                    use_conda_store_env=self.use_conda_store_env,
+                ).process
+            )
+            p.start()
+
+            job.pid = p.pid
+            session.commit()
+
+            job_id = job.job_id
+
+        return job_id
 
     def create_cron_job(self, model: CreateJob, job_definition_id: str, schedule: str, timezone: str) -> str:
         print(BASIC_LOGGING.format("ArgoScheduler.create_cron_job"))
@@ -451,6 +576,7 @@ class ArgoScheduler(Scheduler):
                     job_definition_id=job_definition_id,
                     schedule=schedule,
                     timezone=timezone,
+                    use_conda_store_env=self.use_conda_store_env,
                 ).process
             )
             p.start()
