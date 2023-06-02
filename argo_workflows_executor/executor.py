@@ -89,7 +89,7 @@ class ArgoExecutor(ExecutionManager):
         # Update status of job via Argo-Workflows script
         pass
 
-    def create_workflow(job: DescribeJob, staging_paths: Dict, db_url: str, use_conda_store_env: bool = True):
+    def create_workflow(self, job: DescribeJob, staging_paths: Dict, db_url: str, use_conda_store_env: bool = True):
         authenticate()
 
         print(BASIC_LOGGING.format("creating workflow..."))
@@ -133,6 +133,7 @@ class ArgoExecutor(ExecutionManager):
         print(BASIC_LOGGING.format("workflow created"))
 
     def create_cron_workflow(
+        self,
         job: DescribeJob,
         staging_paths: Dict,
         job_definition_id: str,
