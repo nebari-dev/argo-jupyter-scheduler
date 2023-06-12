@@ -19,9 +19,9 @@ from jupyter_server.transutils import _i18n
 from traitlets import Bool, Instance
 from traitlets import Type as TType
 
-from .executor import ArgoExecutor, delete_cron_workflow, delete_workflow
+from .executor import ArgoExecutor
 from .task_runner import ArgoTaskRunner
-from .utils import BASIC_LOGGING
+from .utils import BASIC_LOGGING, WorkflowActionsEnum
 
 
 class ArgoScheduler(Scheduler):
@@ -79,6 +79,7 @@ class ArgoScheduler(Scheduler):
 
             p = Process(
                 target=self.execution_manager_class(
+                    action=WorkflowActionsEnum.create,
                     job_id=job.job_id,
                     staging_paths=staging_paths,
                     root_dir=self.root_dir,
@@ -87,58 +88,6 @@ class ArgoScheduler(Scheduler):
                 ).process
             )
             p.start()
-
-            job.pid = p.pid
-            session.commit()
-
-            job_id = job.job_id
-
-        return job_id
-
-    def create_cron_job(self, model: CreateJob, job_definition_id: str, schedule: str, timezone: str) -> str:
-        print(BASIC_LOGGING.format("ArgoScheduler.create_cron_job"))
-        if not model.job_definition_id and not self.file_exists(model.input_uri):
-            raise InputUriError(model.input_uri)
-
-        input_path = os.path.join(self.root_dir, model.input_uri)
-        if not self.execution_manager_class.validate(self.execution_manager_class, input_path):
-            raise SchedulerError(
-                """There is no kernel associated with the notebook. Please open
-                    the notebook, select a kernel, and re-submit the job to execute.
-                    """
-            )
-
-        with self.db_session() as session:
-            if model.idempotency_token:
-                job = session.query(Job).filter(Job.idempotency_token == model.idempotency_token).first()
-                if job:
-                    raise IdempotencyTokenError(model.idempotency_token)
-
-            if not model.output_formats:
-                model.output_formats = []
-
-            job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
-            session.add(job)
-            session.commit()
-
-            staging_paths = self.get_staging_paths(DescribeJob.from_orm(job))
-            self.copy_input_file(model.input_uri, staging_paths["input"])
-
-            p = Process(
-                target=self.execution_manager_class(
-                    job_id=job.job_id,
-                    staging_paths=staging_paths,
-                    root_dir=self.root_dir,
-                    db_url=self.db_url,
-                    job_definition_id=job_definition_id,
-                    schedule=schedule,
-                    timezone=timezone,
-                    use_conda_store_env=self.use_conda_store_env,
-                ).process
-            )
-            p.start()
-
-            job.tags = [" Cron-Job; to remove, delete Job Definition "]
 
             job.pid = p.pid
             session.commit()
@@ -153,7 +102,7 @@ class ArgoScheduler(Scheduler):
             session.query(Job).filter(Job.job_id == job_id).update(model.dict(exclude_none=True))
             session.commit()
 
-    def delete_job(self, job_id: str, delete_associated_workflow=True):
+    def delete_job(self, job_id: str):
         print(BASIC_LOGGING.format("ArgoScheduler.delete_job"))
         with self.db_session() as session:
             job_record = session.query(Job).filter(Job.job_id == job_id).one()
@@ -166,11 +115,18 @@ class ArgoScheduler(Scheduler):
                 if os.path.exists(path):
                     shutil.rmtree(path)
 
+            p = Process(
+                target=self.execution_manager_class(
+                    action=WorkflowActionsEnum.delete,
+                    job_id=job_id,
+                    db_url=self.db_url,
+                ).process
+            )
+            p.start()
+            p.join()
+
             session.query(Job).filter(Job.job_id == job_id).delete()
             session.commit()
-
-        if delete_associated_workflow:
-            delete_workflow(job_id)
 
     def stop_job(self, job_id: str):
         print(BASIC_LOGGING.format("ArgoScheduler.stop_job"))
@@ -187,6 +143,17 @@ class ArgoScheduler(Scheduler):
                 for proc in children:
                     if process_id == proc.pid:
                         proc.kill()
+
+                        p = Process(
+                            target=self.execution_manager_class(
+                                action=WorkflowActionsEnum.stop,
+                                job_id=job_id,
+                                db_url=self.db_url,
+                            ).process
+                        )
+                        p.start()
+                        p.join()
+
                         session.query(Job).filter(Job.job_id == job_id).update({"status": Status.STOPPED})
                         session.commit()
                         break
@@ -198,8 +165,7 @@ class ArgoScheduler(Scheduler):
                 raise InputUriError(model.input_uri)
 
             job_definition = JobDefinition(**model.dict(exclude_none=True, exclude={"input_uri"}))
-
-            job_definition.tags = [" Cron-Job; to remove, delete Job Definition "]
+            job_definition.tags = [" Cron-Workflow "]
 
             session.add(job_definition)
             session.commit()
@@ -209,10 +175,25 @@ class ArgoScheduler(Scheduler):
             staging_paths = self.get_staging_paths(DescribeJobDefinition.from_orm(job_definition))
             self.copy_input_file(model.input_uri, staging_paths["input"])
 
+            if not model.output_formats:
+                model.output_formats = []
+
+            p = Process(
+                target=self.execution_manager_class(
+                    action=WorkflowActionsEnum.create,
+                    staging_paths=staging_paths,
+                    root_dir=self.root_dir,
+                    db_url=self.db_url,
+                    job_definition_id=job_definition_id,
+                    schedule=job_definition.schedule,
+                    timezone=job_definition.timezone,
+                    use_conda_store_env=self.use_conda_store_env,
+                ).process
+            )
+            p.start()
+
         if self.task_runner and job_definition.schedule:
             self.task_runner.add_job_definition(job_definition_id)
-
-        self.create_cron_job_from_definition(job_definition_id)
 
         return job_definition_id
 
@@ -269,24 +250,18 @@ class ArgoScheduler(Scheduler):
                 .scalar()
             )
 
+            p = Process(
+                target=self.execution_manager_class(
+                    action=WorkflowActionsEnum.delete,
+                    db_url=self.db_url,
+                    job_definition_id=job_definition_id,
+                ).process
+            )
+            p.start()
+            p.join()
+
             session.query(JobDefinition).filter(JobDefinition.job_definition_id == job_definition_id).delete()
             session.commit()
 
         if self.task_runner and schedule:
             self.task_runner.delete_job_definition(job_definition_id)
-
-        delete_cron_workflow(job_definition_id)
-
-    def create_cron_job_from_definition(self, job_definition_id: str) -> str:
-        print(BASIC_LOGGING.format("ArgoScheduler.create_cron_job_from_definition"))
-        job_id = None
-        definition = self.get_job_definition(job_definition_id)
-        schedule = definition.schedule
-        timezone = definition.timezone
-        if definition:
-            input_uri = self.get_staging_paths(definition)["input"]
-            attributes = definition.dict(exclude={"schedule", "timezone"}, exclude_none=True)
-            attributes = {**attributes, "input_uri": input_uri}
-            job_id = self.create_cron_job(CreateJob(**attributes), job_definition_id, schedule, timezone)
-
-        return job_id

@@ -1,5 +1,6 @@
 import json
 import os
+from enum import Enum
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -10,47 +11,15 @@ from urllib3.exceptions import ConnectionError
 # TODO: determine how to properly send logs to Jupyter server
 BASIC_LOGGING = "argo-workflows-executor : {}"
 
-
-action_mapping = {
-    "create_job": "create_workflow",
-    "update_job": "update_workflow",
-    "delete_job": "delete_workflow",
-    "stop_job": "stop_workflow",
-    "create_job_definition": "create_cron_workflow",
-    "update_job_definition": "update_cron_workflow",
-    "delete_job_definition": "delete_cron_workflow",
-}
-
 CONDA_STORE_TOKEN = "CONDA_STORE_TOKEN"
 CONDA_STORE_SERVICE = "CONDA_STORE_SERVICE"
 
 
-UPDATE_JOB_STATUS_FAILURE_SCRIPT = """
-from jupyter_scheduler.orm import create_session, Job;
-from jupyter_scheduler.utils import get_utc_timestamp;
-from jupyter_scheduler.models import Status;
-
-db_session = create_session(db_url);
-with db_session() as session:
-    session.query(Job).filter(Job.job_id == job_id).update(
-        {"status": Status.FAILED, "status_message": "Workflow failed."}
-    );
-    session.commit();
-"""
-
-
-UPDATE_JOB_STATUS_SUCCESS_SCRIPT = """
-from jupyter_scheduler.orm import create_session, Job;
-from jupyter_scheduler.utils import get_utc_timestamp;
-from jupyter_scheduler.models import Status;
-
-db_session = create_session(db_url);
-with db_session() as session:
-    session.query(Job).filter(Job.job_id == job_id).update(
-        {"status": Status.COMPLETED, "end_time": get_utc_timestamp()}
-    );
-    session.commit();
-"""
+class WorkflowActionsEnum(Enum):
+    create = "create"
+    update = "update"
+    delete = "delete"
+    stop = "stop"
 
 
 def authenticate():
