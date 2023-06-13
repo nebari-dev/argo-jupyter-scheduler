@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 
 .vscode
+argo_workflows_executor/_version.py
