@@ -474,7 +474,7 @@ def update_job_status_failure(db_url, job_id=None, job_definition_id=None):
             # for cron-workflows, update each associated job record
             job = (
                 session.query(Job)
-                .filter_by(Job.job_definition_id == job_definition_id)
+                .filter(Job.job_definition_id == job_definition_id)
                 .order_by(desc(Job.start_time))
                 .first()
             )
@@ -499,7 +499,7 @@ def update_job_status_success(db_url, job_id=None, job_definition_id=None):
             # for cron-workflows, update each associated job record
             job = (
                 session.query(Job)
-                .filter_by(Job.job_definition_id == job_definition_id)
+                .filter(Job.job_definition_id == job_definition_id)
                 .order_by(desc(Job.start_time))
                 .first()
             )
