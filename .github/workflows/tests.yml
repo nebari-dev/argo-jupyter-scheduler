@@ -1,0 +1,55 @@
+name: "Tests"
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/tests.yml"
+      - "argo_workflows_executor/**"
+  push:
+    branches:
+      - main
+
+jobs:
+  pre-commit:
+    name: "pre-commit"
+    runs-on: ubuntu-latest
+    steps:
+        - name: "Checkout repo"
+          uses: actions/checkout@v3
+          with:
+            fetch-depth: 0
+
+        - name: "Setup Python"
+          uses: actions/setup-python@v3
+          
+        - name: "Run pre-commit"
+          uses: pre-commit/action@v3.0.0
+
+  pytest:
+    name: "pytest"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.8"
+          - "3.9"
+          - "3.10"
+          - "3.11"
+      fail-fast: false
+    steps:
+      - name: "Checkout repo"
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: "Setup Python"
+        uses: actions/setup-python@v3
+
+      - name: "Install package"
+        run: |
+          pip install .[dev]
+
+      - name: "Test package"
+        run: |
+          pytest --version
+          pytest -vvv

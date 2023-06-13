@@ -478,7 +478,7 @@ def update_job_status_failure(db_url, job_id=None, job_definition_id=None):
                 .order_by(desc(Job.start_time))
                 .first()
             )
-            job_id = job.id
+            job_id = job.job_id
 
         session.query(Job).filter(Job.job_id == job_id).update(
             {"status": Status.FAILED, "status_message": "Workflow failed."}
@@ -503,7 +503,7 @@ def update_job_status_success(db_url, job_id=None, job_definition_id=None):
                 .order_by(desc(Job.start_time))
                 .first()
             )
-            job_id = job.id
+            job_id = job.job_id
 
         session.query(Job).filter(Job.job_id == job_id).update(
             {"status": Status.COMPLETED, "end_time": get_utc_timestamp()}

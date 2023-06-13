@@ -5,33 +5,40 @@ build-backend = "hatchling.build"
 [project]
 name = "argo-workflows-executor"
 dynamic = ["version"]
-description = ''
+description = 'Argo-Workflow backend extension for Jupyter-Scheduler.'
 readme = "README.md"
 requires-python = ">=3.7"
 license = "MIT"
 keywords = []
 authors = [
-  { name = "iameskild", email = "eskild.eriksen122@gmail.com" },
+  { name = "iameskild", email = "eeriksen@quansight.com" },
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.7",
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "jupyter-scheduler",
   "hera-workflows",
-  "fsspec",
-  "nbconvert",
-  "nbformat",
+  "jupyter-scheduler",
+  "jupyter-server",
+  "psutil",
+  "traitlets",
+  "urllib3",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "black",
+  "isort",
+  "pre-commit",
+  "pytest",
+  "ruff",
+]
 [project.urls]
 Documentation = "https://github.com/nebari-dev/argo-workflows-executor#readme"
 Issues = "https://github.com/nebari-dev/argo-workflows-executor/issues"
@@ -84,12 +91,12 @@ all = [
 ]
 
 [tool.black]
-target-version = ["py37"]
+target-version = ["py38"]
 line-length = 120
 skip-string-normalization = true
 
 [tool.ruff]
-target-version = "py37"
+target-version = "py38"
 line-length = 120
 select = [
   "A",
