@@ -1,8 +1,9 @@
 import os
 from typing import Dict, Union
 
+from hera.exceptions import NotFound
 from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow, script
-from hera.workflows.models import ContinueOn, WorkflowStopRequest
+from hera.workflows.models import ContinueOn, UpdateCronWorkflowRequest, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
 from jupyter_scheduler.models import CreateJob, DescribeJob, DescribeJobDefinition, JobFeature, Status
@@ -30,6 +31,7 @@ class ArgoExecutor(ExecutionManager):
         job_definition_id: Union[str, None] = None,
         schedule: Union[str, None] = None,
         timezone: Union[str, None] = None,
+        active: bool = True,
         use_conda_store_env: bool = False,
     ):
         self.root_dir = root_dir
@@ -40,6 +42,7 @@ class ArgoExecutor(ExecutionManager):
         self.job_definition_id = job_definition_id
         self.schedule = schedule
         self.timezone = timezone
+        self.active = active
         self.use_conda_store_env = use_conda_store_env
 
         if not self.job_id and not self.job_definition_id or self.job_id and self.job_definition_id:
@@ -92,7 +95,16 @@ class ArgoExecutor(ExecutionManager):
                     use_conda_store_env=self.use_conda_store_env,
                 )
             elif self.action == WorkflowActionsEnum.update:
-                pass
+                self.update_cron_workflow(
+                    model,
+                    self.staging_paths,
+                    self.job_definition_id,
+                    self.schedule,
+                    self.timezone,
+                    self.active,
+                    db_url=self.db_url,
+                    use_conda_store_env=self.use_conda_store_env,
+                )
 
             elif self.action == WorkflowActionsEnum.delete:
                 self.delete_cron_workflow(self.job_definition_id)
@@ -220,7 +232,7 @@ class ArgoExecutor(ExecutionManager):
 
         print(BASIC_LOGGING.format("workflow stopped"))
 
-    def create_cron_workflow(
+    def _create_cwf_oject(
         self,
         job: DescribeJobDefinition,
         staging_paths: Dict,
@@ -228,11 +240,11 @@ class ArgoExecutor(ExecutionManager):
         schedule: str,
         timezone: str,
         db_url: str,
+        active: bool = True,
         use_conda_store_env: bool = True,
     ):
-        authenticate()
-
-        print(BASIC_LOGGING.format("creating cron workflow..."))
+        # Argo-Workflow verbage vs Jupyter-Scheduler verbage
+        suspend = not active
 
         labels = {
             "jupyterflow-override": "true",
@@ -268,9 +280,9 @@ class ArgoExecutor(ExecutionManager):
             concurrency_policy="Replace",
             successful_jobs_history_limit=4,
             failed_jobs_history_limit=4,
-            cron_suspend=False,
+            cron_suspend=suspend,
             labels=labels,
-        ) as w:
+        ) as cwf:
             create_job_record_script = create_job_record(
                 name="create-job-id",
                 arguments={
@@ -297,11 +309,35 @@ class ArgoExecutor(ExecutionManager):
                 ],
             )
 
+        return cwf
+
+    def create_cron_workflow(
+        self,
+        job: DescribeJobDefinition,
+        staging_paths: Dict,
+        job_definition_id: str,
+        schedule: str,
+        timezone: str,
+        db_url: str,
+        use_conda_store_env: bool = True,
+    ):
+        authenticate()
+
+        print(BASIC_LOGGING.format("creating cron workflow..."))
+
+        w = self._create_cwf_oject(
+            job=job,
+            staging_paths=staging_paths,
+            job_definition_id=job_definition_id,
+            schedule=schedule,
+            timezone=timezone,
+            db_url=db_url,
+            use_conda_store_env=use_conda_store_env,
+        )
+
         w.create()
 
         print(BASIC_LOGGING.format("cron workflow created"))
-
-        return w
 
     def delete_cron_workflow(self, job_definition_id: str):
         global_config = authenticate()
@@ -322,6 +358,52 @@ class ArgoExecutor(ExecutionManager):
                 raise e
 
         print(BASIC_LOGGING.format("cron workflow deleted"))
+
+    def update_cron_workflow(
+        self,
+        job: DescribeJobDefinition,
+        staging_paths: Dict,
+        job_definition_id: str,
+        schedule: str,
+        timezone: str,
+        active: bool,
+        db_url: str,
+        use_conda_store_env: bool = True,
+    ):
+        global_config = authenticate()
+
+        print(BASIC_LOGGING.format("updating cron workflow..."))
+
+        w = self._create_cwf_oject(
+            job=job,
+            staging_paths=staging_paths,
+            job_definition_id=job_definition_id,
+            schedule=schedule,
+            timezone=timezone,
+            db_url=db_url,
+            active=active,
+            use_conda_store_env=use_conda_store_env,
+        )
+
+        # TODO: blocked until this issue is resolved:
+        # https://github.com/argoproj-labs/hera/issues/679
+        req = UpdateCronWorkflowRequest(cron_workflow=w)
+
+        try:
+            wfs = WorkflowsService()
+            wfs.update_cron_workflow(
+                req=req,
+                name=gen_cron_workflow_name(job_definition_id),
+                namespace=global_config.namespace,
+            )
+        except Exception as e:
+            # Hera-Workflows raises generic Exception for all errors :(
+            if str(e).startswith("Server returned status code"):
+                print(BASIC_LOGGING.format(e))
+            else:
+                raise e
+
+        print(BASIC_LOGGING.format("cron workflow updated"))
 
 
 @script()
@@ -380,7 +462,7 @@ def create_job_record(
     job_definition_id,
 ):
     from jupyter_scheduler.exceptions import IdempotencyTokenError
-    from jupyter_scheduler.models import CreateJob
+    from jupyter_scheduler.models import CreateJob, Status
     from jupyter_scheduler.orm import Job, create_session
 
     model = CreateJob(**model)
@@ -401,6 +483,7 @@ def create_job_record(
 
         job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
         job.job_definition_id = job_definition_id
+        job.status = Status.IN_PROGRESS
 
         session.add(job)
         session.commit()

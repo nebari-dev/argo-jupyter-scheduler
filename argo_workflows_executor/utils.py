@@ -45,11 +45,11 @@ def authenticate():
 
 
 def gen_workflow_name(job_id: str):
-    return f"js-wf-{job_id}"
+    return f"job-{job_id}"
 
 
 def gen_cron_workflow_name(job_definition_id: str):
-    return f"js-cwf-{job_definition_id}"
+    return f"job-def-{job_definition_id}"
 
 
 def gen_output_path(input_path: str):
