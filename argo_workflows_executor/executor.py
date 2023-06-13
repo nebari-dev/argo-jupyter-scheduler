@@ -520,6 +520,7 @@ def create_job_record(
     from jupyter_scheduler.exceptions import IdempotencyTokenError
     from jupyter_scheduler.models import CreateJob, Status
     from jupyter_scheduler.orm import Job, create_session
+    from jupyter_scheduler.utils import get_utc_timestamp
 
     model = CreateJob(**model)
 
