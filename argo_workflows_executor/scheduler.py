@@ -3,7 +3,11 @@ import shutil
 from multiprocessing import Process
 
 import psutil
-from jupyter_scheduler.exceptions import IdempotencyTokenError, InputUriError, SchedulerError
+from jupyter_scheduler.exceptions import (
+    IdempotencyTokenError,
+    InputUriError,
+    SchedulerError,
+)
 from jupyter_scheduler.models import (
     CreateJob,
     CreateJobDefinition,
@@ -19,9 +23,11 @@ from jupyter_server.transutils import _i18n
 from traitlets import Bool, Instance
 from traitlets import Type as TType
 
-from .executor import ArgoExecutor
-from .task_runner import ArgoTaskRunner
-from .utils import BASIC_LOGGING, WorkflowActionsEnum
+from argo_workflows_executor.executor import ArgoExecutor
+from argo_workflows_executor.task_runner import ArgoTaskRunner
+from argo_workflows_executor.utils import WorkflowActionsEnum, setup_logger
+
+logger = setup_logger(__name__)
 
 
 class ArgoScheduler(Scheduler):
@@ -44,26 +50,36 @@ class ArgoScheduler(Scheduler):
         config=True,
         default_value=ArgoTaskRunner,
         klass="jupyter_scheduler.task_runner.BaseTaskRunner",
-        help=_i18n("The class that handles the job creation of scheduled jobs from job definitions."),
+        help=_i18n(
+            "The class that handles the job creation of scheduled jobs from job definitions."
+        ),
     )
 
-    task_runner = Instance(allow_none=True, klass="jupyter_scheduler.task_runner.BaseTaskRunner")
+    task_runner = Instance(
+        allow_none=True, klass="jupyter_scheduler.task_runner.BaseTaskRunner"
+    )
 
     def create_job(self, model: CreateJob) -> str:
         if not model.job_definition_id and not self.file_exists(model.input_uri):
             raise InputUriError(model.input_uri)
 
         input_path = os.path.join(self.root_dir, model.input_uri)
-        if not self.execution_manager_class.validate(self.execution_manager_class, input_path):
-            raise SchedulerError(
-                """There is no kernel associated with the notebook. Please open
-                    the notebook, select a kernel, and re-submit the job to execute.
-                    """
-            )
+        if not self.execution_manager_class.validate(
+            self.execution_manager_class, input_path
+        ):
+            msg = """
+            There is no kernel associated with the notebook. Please open\n
+            the notebook, select a kernel, and re-submit the job to execute.\n
+            """
+            raise SchedulerError(msg)
 
         with self.db_session() as session:
             if model.idempotency_token:
-                job = session.query(Job).filter(Job.idempotency_token == model.idempotency_token).first()
+                job = (
+                    session.query(Job)
+                    .filter(Job.idempotency_token == model.idempotency_token)
+                    .first()
+                )
                 if job:
                     raise IdempotencyTokenError(model.idempotency_token)
 
@@ -97,13 +113,15 @@ class ArgoScheduler(Scheduler):
         return job_id
 
     def update_job(self, job_id: str, model: UpdateJob):
-        print(BASIC_LOGGING.format("ArgoScheduler.update_job"))
+        logger.info("ArgoScheduler.update_job")
         with self.db_session() as session:
-            session.query(Job).filter(Job.job_id == job_id).update(model.dict(exclude_none=True))
+            session.query(Job).filter(Job.job_id == job_id).update(
+                model.dict(exclude_none=True)
+            )
             session.commit()
 
     def delete_job(self, job_id: str, delete_workflow: bool = True):
-        print(BASIC_LOGGING.format("ArgoScheduler.delete_job"))
+        logger.info("ArgoScheduler.delete_job")
         with self.db_session() as session:
             job_record = session.query(Job).filter(Job.job_id == job_id).one()
             if Status(job_record.status) == Status.IN_PROGRESS:
@@ -130,13 +148,15 @@ class ArgoScheduler(Scheduler):
             session.commit()
 
     def stop_job(self, job_id: str):
-        print(BASIC_LOGGING.format("ArgoScheduler.stop_job"))
+        logger.info("ArgoScheduler.stop_job")
         with self.db_session() as session:
             job_record = session.query(Job).filter(Job.job_id == job_id).one()
             job = DescribeJob.from_orm(job_record)
             process_id = job_record.pid
             if process_id and job.status == Status.IN_PROGRESS:
-                session.query(Job).filter(Job.job_id == job_id).update({"status": Status.STOPPING})
+                session.query(Job).filter(Job.job_id == job_id).update(
+                    {"status": Status.STOPPING}
+                )
                 session.commit()
 
                 current_process = psutil.Process()
@@ -155,17 +175,21 @@ class ArgoScheduler(Scheduler):
                         p.start()
                         p.join()
 
-                        session.query(Job).filter(Job.job_id == job_id).update({"status": Status.STOPPED})
+                        session.query(Job).filter(Job.job_id == job_id).update(
+                            {"status": Status.STOPPED}
+                        )
                         session.commit()
                         break
 
     def create_job_definition(self, model: CreateJobDefinition) -> str:
-        print(BASIC_LOGGING.format("ArgoScheduler.create_job_definition"))
+        logger.info("ArgoScheduler.create_job_definition")
         with self.db_session() as session:
             if not self.file_exists(model.input_uri):
                 raise InputUriError(model.input_uri)
 
-            job_definition = JobDefinition(**model.dict(exclude_none=True, exclude={"input_uri"}))
+            job_definition = JobDefinition(
+                **model.dict(exclude_none=True, exclude={"input_uri"})
+            )
             job_definition.tags = [" Cron-Workflow "]
 
             session.add(job_definition)
@@ -173,7 +197,9 @@ class ArgoScheduler(Scheduler):
 
             job_definition_id = job_definition.job_definition_id
 
-            staging_paths = self.get_staging_paths(DescribeJobDefinition.from_orm(job_definition))
+            staging_paths = self.get_staging_paths(
+                DescribeJobDefinition.from_orm(job_definition)
+            )
             self.copy_input_file(model.input_uri, staging_paths["input"])
 
             if not model.output_formats:
@@ -198,9 +224,10 @@ class ArgoScheduler(Scheduler):
 
         return job_definition_id
 
-    def update_job_definition(self, job_definition_id: str, model: UpdateJobDefinition):
-        print(BASIC_LOGGING.format("ArgoScheduler.update_job_definition"))
-        return
+    def update_job_definition(
+        self, job_definition_id: str, model: UpdateJobDefinition  # noqa: ARG002
+    ):
+        logger.info("ArgoScheduler.update_job_definition")
         # TODO: blocked until this issue is resolved:
         # https://github.com/argoproj-labs/hera/issues/679
 
@@ -217,7 +244,7 @@ class ArgoScheduler(Scheduler):
         #     if (
         #         (
         #             not model.input_uri
-        #             or (model.input_uri and describe_job_definition.input_filename == os.path.basename(model.input_uri))
+        #             or (model.input_uri and describe_job_definition.input_filename == os.path.basename(model.input_uri))  # noqa: E501
         #         )
         #         and describe_job_definition.schedule == model.schedule
         #         and describe_job_definition.timezone == model.timezone
@@ -262,7 +289,7 @@ class ArgoScheduler(Scheduler):
         #     self.task_runner.update_job_definition(job_definition_id, model)
 
     def delete_job_definition(self, job_definition_id: str):
-        print(BASIC_LOGGING.format("ArgoScheduler.delete_job_definition"))
+        logger.info("ArgoScheduler.delete_job_definition")
         with self.db_session() as session:
             jobs = session.query(Job).filter(Job.job_definition_id == job_definition_id)
             for job in jobs:
@@ -285,7 +312,9 @@ class ArgoScheduler(Scheduler):
             p.start()
             p.join()
 
-            session.query(JobDefinition).filter(JobDefinition.job_definition_id == job_definition_id).delete()
+            session.query(JobDefinition).filter(
+                JobDefinition.job_definition_id == job_definition_id
+            ).delete()
             session.commit()
 
         if self.task_runner and schedule:

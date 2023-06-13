@@ -1,23 +1,34 @@
 import os
 from typing import Dict, Union
 
-from hera.exceptions import NotFound
 from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow, script
-from hera.workflows.models import ContinueOn, UpdateCronWorkflowRequest, WorkflowStopRequest
+from hera.workflows.models import (
+    ContinueOn,
+    UpdateCronWorkflowRequest,
+    WorkflowStopRequest,
+)
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
-from jupyter_scheduler.models import CreateJob, DescribeJob, DescribeJobDefinition, JobFeature, Status
+from jupyter_scheduler.models import (
+    CreateJob,
+    DescribeJob,
+    DescribeJobDefinition,
+    JobFeature,
+    Status,
+)
 from jupyter_scheduler.orm import Job, JobDefinition
 from jupyter_scheduler.utils import get_utc_timestamp
 
-from .utils import (
-    BASIC_LOGGING,
+from argo_workflows_executor.utils import (
     WorkflowActionsEnum,
     authenticate,
     gen_cron_workflow_name,
     gen_papermill_command_input,
     gen_workflow_name,
+    setup_logger,
 )
+
+logger = setup_logger(__name__)
 
 
 class ArgoExecutor(ExecutionManager):
@@ -45,8 +56,14 @@ class ArgoExecutor(ExecutionManager):
         self.active = active
         self.use_conda_store_env = use_conda_store_env
 
-        if not self.job_id and not self.job_definition_id or self.job_id and self.job_definition_id:
-            raise ValueError("Must provide either `job_id` or `job_definition_id`, not both or neither.")
+        if (
+            not self.job_id
+            and not self.job_definition_id
+            or self.job_id
+            and self.job_definition_id
+        ):
+            msg = "Must provide either `job_id` or `job_definition_id`, not both or neither."
+            raise ValueError(msg)
 
     @property
     def model(self):
@@ -59,7 +76,9 @@ class ArgoExecutor(ExecutionManager):
                 with self.db_session() as session:
                     job_definition = (
                         session.query(JobDefinition)
-                        .filter(JobDefinition.job_definition_id == self.job_definition_id)
+                        .filter(
+                            JobDefinition.job_definition_id == self.job_definition_id
+                        )
                         .first()
                     )
                     self._model = DescribeJobDefinition.from_orm(job_definition)
@@ -71,7 +90,10 @@ class ArgoExecutor(ExecutionManager):
         if self.job_id:
             if self.action == WorkflowActionsEnum.create:
                 self.create_workflow(
-                    model, self.staging_paths, db_url=self.db_url, use_conda_store_env=self.use_conda_store_env
+                    model,
+                    self.staging_paths,
+                    db_url=self.db_url,
+                    use_conda_store_env=self.use_conda_store_env,
                 )
 
             elif self.action == WorkflowActionsEnum.delete:
@@ -112,7 +134,7 @@ class ArgoExecutor(ExecutionManager):
             else:
                 ValueError(f"The action `{self.action}` is invalid for cron-workflows.")
 
-    def supported_features(cls) -> Dict[JobFeature, bool]:
+    def supported_features(cls) -> Dict[JobFeature, bool]:  # noqa: N805
         # TODO: determine if all of these features are actually supported
         return {
             JobFeature.job_name: True,
@@ -130,7 +152,7 @@ class ArgoExecutor(ExecutionManager):
             JobFeature.delete_job: True,
         }
 
-    def validate(cls, input_path: str) -> bool:
+    def validate(cls, input_path: str) -> bool:  # noqa: N805, ARG002
         # TODO: perform some actual validation
         return True
 
@@ -148,19 +170,32 @@ class ArgoExecutor(ExecutionManager):
         # Update status of job via Argo-Workflows script
         pass
 
-    def create_workflow(self, job: DescribeJob, staging_paths: Dict, db_url: str, use_conda_store_env: bool = True):
+    def create_workflow(
+        self,
+        job: DescribeJob,
+        staging_paths: Dict,
+        db_url: str,
+        use_conda_store_env: bool = True,
+    ):
         authenticate()
 
-        print(BASIC_LOGGING.format("creating workflow..."))
+        logger.info("creating workflow...")
 
         labels = {
             "jupyterflow-override": "true",
             "jupyter-scheduler-job-id": job.job_id,
-            "workflows.argoproj.io/creator-preferred-username": os.environ["PREFERRED_USERNAME"],
+            "workflows.argoproj.io/creator-preferred-username": os.environ[
+                "PREFERRED_USERNAME"
+            ],
         }
-        cmd_args = ["-c"] + gen_papermill_command_input(
-            job.runtime_environment_name, staging_paths["input"], use_conda_store_env
-        )
+        cmd_args = [
+            "-c",
+            *gen_papermill_command_input(
+                job.runtime_environment_name,
+                staging_paths["input"],
+                use_conda_store_env,
+            ),
+        ]
 
         main = Container(
             name="main",
@@ -171,25 +206,33 @@ class ArgoExecutor(ExecutionManager):
         failure = "{{steps.main.status}} == Failed"
         successful = "{{steps.main.status}} == Succeeded"
 
-        with Workflow(name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels) as w:
-            main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+        with Workflow(
+            name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels
+        ) as w:
+            main_step = Step(
+                name="main", template=main, continue_on=ContinueOn(failed=True)
+            )
             failure_script = update_job_status_failure(
-                name="failure", arguments={"db_url": db_url, "job_id": job.job_id}, when=failure
+                name="failure",
+                arguments={"db_url": db_url, "job_id": job.job_id},
+                when=failure,
             )
             success_script = update_job_status_success(
-                name="success", arguments={"db_url": db_url, "job_id": job.job_id}, when=successful
+                name="success",
+                arguments={"db_url": db_url, "job_id": job.job_id},
+                when=successful,
             )
 
             Steps(name="steps", sub_steps=[main_step, failure_script, success_script])
 
         w.create()
 
-        print(BASIC_LOGGING.format("workflow created"))
+        logger.info("workflow created")
 
     def delete_workflow(self, job_id: str):
         global_config = authenticate()
 
-        print(BASIC_LOGGING.format("deleting workflow..."))
+        logger.info("deleting workflow...")
 
         try:
             wfs = WorkflowsService()
@@ -200,16 +243,16 @@ class ArgoExecutor(ExecutionManager):
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):
-                print(BASIC_LOGGING.format(e))
+                logger.info(e)
             else:
                 raise e
 
-        print(BASIC_LOGGING.format("workflow deleted"))
+        logger.info("workflow deleted")
 
     def stop_workflow(self, job_id):
         global_config = authenticate()
 
-        print(BASIC_LOGGING.format("stopping workflow..."))
+        logger.info("stopping workflow...")
 
         try:
             req = WorkflowStopRequest(
@@ -226,11 +269,11 @@ class ArgoExecutor(ExecutionManager):
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):
-                print(BASIC_LOGGING.format(e))
+                logger.info(e)
             else:
                 raise e
 
-        print(BASIC_LOGGING.format("workflow stopped"))
+        logger.info("workflow stopped")
 
     def _create_cwf_oject(
         self,
@@ -249,11 +292,18 @@ class ArgoExecutor(ExecutionManager):
         labels = {
             "jupyterflow-override": "true",
             "jupyter-scheduler-job-definition-id": job_definition_id,
-            "workflows.argoproj.io/creator-preferred-username": os.environ["PREFERRED_USERNAME"],
+            "workflows.argoproj.io/creator-preferred-username": os.environ[
+                "PREFERRED_USERNAME"
+            ],
         }
-        cmd_args = ["-c"] + gen_papermill_command_input(
-            job.runtime_environment_name, staging_paths["input"], use_conda_store_env
-        )
+        cmd_args = [
+            "-c",
+            *gen_papermill_command_input(
+                job.runtime_environment_name,
+                staging_paths["input"],
+                use_conda_store_env,
+            ),
+        ]
 
         main = Container(
             name="main",
@@ -291,12 +341,18 @@ class ArgoExecutor(ExecutionManager):
                     "job_definition_id": job_definition_id,
                 },
             )
-            main_step = Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+            main_step = Step(
+                name="main", template=main, continue_on=ContinueOn(failed=True)
+            )
             failure_script = update_job_status_failure(
-                name="failure", arguments={"db_url": db_url, "job_definition_id": job_definition_id}, when=failure
+                name="failure",
+                arguments={"db_url": db_url, "job_definition_id": job_definition_id},
+                when=failure,
             )
             success_script = update_job_status_success(
-                name="success", arguments={"db_url": db_url, "job_definition_id": job_definition_id}, when=successful
+                name="success",
+                arguments={"db_url": db_url, "job_definition_id": job_definition_id},
+                when=successful,
             )
 
             Steps(
@@ -323,7 +379,7 @@ class ArgoExecutor(ExecutionManager):
     ):
         authenticate()
 
-        print(BASIC_LOGGING.format("creating cron workflow..."))
+        logger.info("creating cron workflow...")
 
         w = self._create_cwf_oject(
             job=job,
@@ -337,12 +393,12 @@ class ArgoExecutor(ExecutionManager):
 
         w.create()
 
-        print(BASIC_LOGGING.format("cron workflow created"))
+        logger.info("cron workflow created")
 
     def delete_cron_workflow(self, job_definition_id: str):
         global_config = authenticate()
 
-        print(BASIC_LOGGING.format("deleting cron workflow..."))
+        logger.info("deleting cron workflow...")
 
         try:
             wfs = WorkflowsService()
@@ -353,11 +409,11 @@ class ArgoExecutor(ExecutionManager):
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):
-                print(BASIC_LOGGING.format(e))
+                logger.info(e)
             else:
                 raise e
 
-        print(BASIC_LOGGING.format("cron workflow deleted"))
+        logger.info("cron workflow deleted")
 
     def update_cron_workflow(
         self,
@@ -372,7 +428,7 @@ class ArgoExecutor(ExecutionManager):
     ):
         global_config = authenticate()
 
-        print(BASIC_LOGGING.format("updating cron workflow..."))
+        logger.info("updating cron workflow...")
 
         w = self._create_cwf_oject(
             job=job,
@@ -399,11 +455,11 @@ class ArgoExecutor(ExecutionManager):
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):
-                print(BASIC_LOGGING.format(e))
+                logger.info(e)
             else:
                 raise e
 
-        print(BASIC_LOGGING.format("cron workflow updated"))
+        logger.info("cron workflow updated")
 
 
 @script()
@@ -467,14 +523,14 @@ def create_job_record(
 
     model = CreateJob(**model)
 
-    print(model)
-    print(db_url)
-    print(job_definition_id)
-
     db_session = create_session(db_url)
     with db_session() as session:
         if model.idempotency_token:
-            job = session.query(Job).filter(Job.idempotency_token == model.idempotency_token).first()
+            job = (
+                session.query(Job)
+                .filter(Job.idempotency_token == model.idempotency_token)
+                .first()
+            )
             if job:
                 raise IdempotencyTokenError(model.idempotency_token)
 

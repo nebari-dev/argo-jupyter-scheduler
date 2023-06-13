@@ -1,14 +1,20 @@
-from jupyter_scheduler.task_runner import JobDefinitionTask, TaskRunner, UpdateJobDefinitionCache
+from jupyter_scheduler.task_runner import (
+    JobDefinitionTask,
+    TaskRunner,
+    UpdateJobDefinitionCache,
+)
 
-from .utils import BASIC_LOGGING
+from argo_workflows_executor.utils import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class ArgoTaskRunner(TaskRunner):
     def process_queue(self):
-        print(BASIC_LOGGING.format("Start process_queue..."))
+        logger.debug("Start process_queue...")
         self.log.debug(self.queue)
         while not self.queue.isempty():
-            print(BASIC_LOGGING.format("** Processing queue **"))
+            logger.debug("Processing queue.")
             task = self.queue.peek()
             cache = self.cache.get(task.job_definition_id)
 
@@ -36,5 +42,12 @@ class ArgoTaskRunner(TaskRunner):
                     self.log.exception(e)
                 self.queue.pop()
                 run_time = self.compute_next_run_time(cache.schedule, cache.timezone)
-                self.cache.update(task.job_definition_id, UpdateJobDefinitionCache(next_run_time=run_time))
-                self.queue.push(JobDefinitionTask(job_definition_id=task.job_definition_id, next_run_time=run_time))
+                self.cache.update(
+                    task.job_definition_id,
+                    UpdateJobDefinitionCache(next_run_time=run_time),
+                )
+                self.queue.push(
+                    JobDefinitionTask(
+                        job_definition_id=task.job_definition_id, next_run_time=run_time
+                    )
+                )
