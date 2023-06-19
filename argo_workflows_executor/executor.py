@@ -2,11 +2,7 @@ import os
 from typing import Dict, Union
 
 from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow, script
-from hera.workflows.models import (
-    ContinueOn,
-    UpdateCronWorkflowRequest,
-    WorkflowStopRequest,
-)
+from hera.workflows.models import ContinueOn, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
 from jupyter_scheduler.models import (
@@ -16,7 +12,7 @@ from jupyter_scheduler.models import (
     JobFeature,
     Status,
 )
-from jupyter_scheduler.orm import Job, JobDefinition
+from jupyter_scheduler.orm import Job, JobDefinition, create_session
 from jupyter_scheduler.utils import get_utc_timestamp
 
 from argo_workflows_executor.utils import (
@@ -426,9 +422,21 @@ class ArgoExecutor(ExecutionManager):
         db_url: str,
         use_conda_store_env: bool = True,
     ):
-        global_config = authenticate()
+        authenticate()
 
         logger.info("updating cron workflow...")
+
+        # when the job definition is paused/resumed, schedule and timezone are not provided
+        if schedule is None and timezone is None:
+            db_session = create_session(db_url)
+            with db_session() as session:
+                job_definition = (
+                    session.query(JobDefinition)
+                    .filter(JobDefinition.job_definition_id == job_definition_id)
+                    .first()
+                )
+                schedule = job_definition.schedule
+                timezone = job_definition.timezone
 
         w = self._create_cwf_oject(
             job=job,
@@ -441,17 +449,8 @@ class ArgoExecutor(ExecutionManager):
             use_conda_store_env=use_conda_store_env,
         )
 
-        # TODO: blocked until this issue is resolved:
-        # https://github.com/argoproj-labs/hera/issues/679
-        req = UpdateCronWorkflowRequest(cron_workflow=w)
-
         try:
-            wfs = WorkflowsService()
-            wfs.update_cron_workflow(
-                req=req,
-                name=gen_cron_workflow_name(job_definition_id),
-                namespace=global_config.namespace,
-            )
+            w.update()
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):

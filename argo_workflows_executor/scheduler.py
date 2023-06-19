@@ -224,69 +224,79 @@ class ArgoScheduler(Scheduler):
 
         return job_definition_id
 
-    def update_job_definition(
-        self, job_definition_id: str, model: UpdateJobDefinition  # noqa: ARG002
-    ):
+    def update_job_definition(self, job_definition_id: str, model: UpdateJobDefinition):
         logger.info("ArgoScheduler.update_job_definition")
-        # TODO: blocked until this issue is resolved:
-        # https://github.com/argoproj-labs/hera/issues/679
+        with self.db_session() as session:
+            filtered_query = session.query(JobDefinition).filter(
+                JobDefinition.job_definition_id == job_definition_id
+            )
 
-        # with self.db_session() as session:
-        #     filtered_query = session.query(JobDefinition).filter(JobDefinition.job_definition_id == job_definition_id)
+            describe_job_definition = DescribeJobDefinition.from_orm(
+                filtered_query.one()
+            )
 
-        #     describe_job_definition = DescribeJobDefinition.from_orm(filtered_query.one())
+            job_definition = JobDefinition(
+                **model.dict(exclude_none=True, exclude={"input_uri"})
+            )
+            job_definition.tags = [" Cron-Workflow "]
 
-        #     job_definition = JobDefinition(**model.dict(exclude_none=True, exclude={"input_uri"}))
-        #     job_definition.tags = [" Cron-Workflow "]
+            staging_paths = self.get_staging_paths(describe_job_definition)
 
-        #     staging_paths = self.get_staging_paths(describe_job_definition)
+            if (
+                (
+                    not model.input_uri
+                    or (
+                        model.input_uri
+                        and describe_job_definition.input_filename
+                        == os.path.basename(model.input_uri)
+                    )
+                )
+                and describe_job_definition.schedule == model.schedule
+                and describe_job_definition.timezone == model.timezone
+                and (
+                    model.active is None
+                    or describe_job_definition.active == model.active
+                )
+            ):
+                return
 
-        #     if (
-        #         (
-        #             not model.input_uri
-        #             or (model.input_uri and describe_job_definition.input_filename == os.path.basename(model.input_uri))  # noqa: E501
-        #         )
-        #         and describe_job_definition.schedule == model.schedule
-        #         and describe_job_definition.timezone == model.timezone
-        #         and (model.active == None or describe_job_definition.active == model.active)
-        #     ):
-        #         return
+            updates = model.dict(exclude_none=True, exclude={"input_uri"})
 
-        #     updates = model.dict(exclude_none=True, exclude={"input_uri"})
+            if model.input_uri:
+                new_input_filename = os.path.basename(model.input_uri)
+                staging_paths = self.get_staging_paths(describe_job_definition)
+                staging_directory = os.path.dirname(staging_paths["input"])
+                self.copy_input_file(
+                    model.input_uri, os.path.join(staging_directory, new_input_filename)
+                )
+                updates["input_filename"] = new_input_filename
 
-        #     if model.input_uri:
-        #         new_input_filename = os.path.basename(model.input_uri)
-        #         staging_paths = self.get_staging_paths(describe_job_definition)
-        #         staging_directory = os.path.dirname(staging_paths["input"])
-        #         self.copy_input_file(model.input_uri, os.path.join(staging_directory, new_input_filename))
-        #         updates["input_filename"] = new_input_filename
+            p = Process(
+                target=self.execution_manager_class(
+                    action=WorkflowActionsEnum.update,
+                    staging_paths=staging_paths,
+                    root_dir=self.root_dir,
+                    db_url=self.db_url,
+                    job_definition_id=job_definition_id,
+                    schedule=job_definition.schedule,
+                    timezone=job_definition.timezone,
+                    active=model.active,
+                    use_conda_store_env=self.use_conda_store_env,
+                ).process
+            )
+            p.start()
 
-        #     p = Process(
-        #         target=self.execution_manager_class(
-        #             action=WorkflowActionsEnum.update,
-        #             staging_paths=staging_paths,
-        #             root_dir=self.root_dir,
-        #             db_url=self.db_url,
-        #             job_definition_id=job_definition_id,
-        #             schedule=job_definition.schedule,
-        #             timezone=job_definition.timezone,
-        #             active=model.active,
-        #             use_conda_store_env=self.use_conda_store_env,
-        #         ).process
-        #     )
-        #     p.start()
+            filtered_query.update(updates)
+            session.commit()
 
-        #     filtered_query.update(updates)
-        #     session.commit()
+            schedule = (
+                session.query(JobDefinition.schedule)
+                .filter(JobDefinition.job_definition_id == job_definition_id)
+                .scalar()
+            )
 
-        #     schedule = (
-        #         session.query(JobDefinition.schedule)
-        #         .filter(JobDefinition.job_definition_id == job_definition_id)
-        #         .scalar()
-        #     )
-
-        # if self.task_runner and schedule:
-        #     self.task_runner.update_job_definition(job_definition_id, model)
+        if self.task_runner and schedule:
+            self.task_runner.update_job_definition(job_definition_id, model)
 
     def delete_job_definition(self, job_definition_id: str):
         logger.info("ArgoScheduler.delete_job_definition")
