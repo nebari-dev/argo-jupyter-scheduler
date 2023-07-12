@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urljoin
@@ -173,3 +174,14 @@ def gen_papermill_command_input(
         "&>",
         log_path,
     ]
+
+
+def sanitize_label(s: str):
+    s = s.lower()
+    pattern = r"[^A-Za-z0-9]"
+    return re.sub(pattern, lambda x: "-" + hex(ord(x.group()))[2:], s)
+
+
+def desanitize_label(s: str):
+    pattern = r"-([A-Za-z0-9][A-Za-z0-9])"
+    return re.sub(pattern, lambda x: chr(int(x.group(1), 16)), s)

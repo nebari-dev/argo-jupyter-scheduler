@@ -21,6 +21,7 @@ from argo_workflows_executor.utils import (
     gen_cron_workflow_name,
     gen_papermill_command_input,
     gen_workflow_name,
+    sanitize_label,
     setup_logger,
 )
 
@@ -180,9 +181,9 @@ class ArgoExecutor(ExecutionManager):
         labels = {
             "jupyterflow-override": "true",
             "jupyter-scheduler-job-id": job.job_id,
-            "workflows.argoproj.io/creator-preferred-username": os.environ[
-                "PREFERRED_USERNAME"
-            ],
+            "workflows.argoproj.io/creator-preferred-username": sanitize_label(
+                os.environ["PREFERRED_USERNAME"]
+            ),
         }
         cmd_args = [
             "-c",
@@ -288,9 +289,9 @@ class ArgoExecutor(ExecutionManager):
         labels = {
             "jupyterflow-override": "true",
             "jupyter-scheduler-job-definition-id": job_definition_id,
-            "workflows.argoproj.io/creator-preferred-username": os.environ[
-                "PREFERRED_USERNAME"
-            ],
+            "workflows.argoproj.io/creator-preferred-username": sanitize_label(
+                os.environ["PREFERRED_USERNAME"]
+            ),
         }
         cmd_args = [
             "-c",
