@@ -34,11 +34,11 @@ What does that mean?
 
 This means this is an application that gets installed in the JupyterLab base image and runs as an extension in JupyterLab. Specifically, you will see this icon from the JupyterHub Launcher window: 
 
-<add screenshot>
+<img width="758" alt="Screenshot 2023-07-12 at 20 48 23" src="https://github.com/nebari-dev/argo-workflows-executor/assets/42120229/a0a27a2e-1c75-404c-8fe6-2328cbb31cba">
 
 And this icon on the toolbar of your Jupyter Notebook:
 
-<add screenshot>
+<img width="1227" alt="jupyter-scheduler-icon" src="https://github.com/nebari-dev/argo-workflows-executor/assets/42120229/cae78aec-4d58-4d71-81cf-c73ed293bf64">
 
 This also means, as a lab extension, this application is running within each user's separate JupyterLab server. The record of the notebooks you've submitted is specific to you and you only. There is no central Jupyter-Scheduler. 
 
