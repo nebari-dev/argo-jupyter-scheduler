@@ -28,11 +28,11 @@ pip install argo-workflows-executor
 
 ## What is it?
 
-Argo-Jupyter-Scheduler is a plugin to the Jupyter-Scheduler JupyterLab extension. 
+Argo-Jupyter-Scheduler is a plugin to the [Jupyter-Scheduler](https://jupyter-scheduler.readthedocs.io/en/latest/index.html) JupyterLab extension. 
 
 What does that mean?
 
-This means this is an application that gets installed in the JupyterLab base image and runs as an extension in JupyterLab. Specifically, you will see this icon from the JupyterHub Launcher window: 
+This means this is an application that gets installed in the JupyterLab base image and runs as an extension in JupyterLab. Specifically, you will see this icon at the bottom of the JupyterLab Launcher tab: 
 
 <img width="758" alt="Screenshot 2023-07-12 at 20 48 23" src="https://github.com/nebari-dev/argo-workflows-executor/assets/42120229/a0a27a2e-1c75-404c-8fe6-2328cbb31cba">
 
@@ -46,7 +46,7 @@ However, instead of using the base Jupyter-Scheduler, we are using **Argo-Jupyte
 
 Why?
 
-If you want to run your Jupyter Notebook on a schedule, you need to be assured that the Notebook will be executed at the times you specified. The fundamental limitation with Jupyter-Scheduler is that when your JupyterLab server is not running, Jupyter-Scheduler is not running. Well, then the Notebooks you had scheduled won't run. (As an aside, the trouble with Notebooks that you want to run right now, is that if the JupyterLab server is down, then how will the status of the notebook run be recorded?)
+If you want to run your Jupyter Notebook on a schedule, you need to be assured that the notebook will be executed at the times you specified. The fundamental limitation with Jupyter-Scheduler is that when your JupyterLab server is not running, Jupyter-Scheduler is not running. Then the notebooks you had scheduled won't run. What about notebooks that you want to run right now? If the JupyterLab server is down, then how will the status of the notebook run be recorded?
 
 The solution is Argo-Jupyter-Scheduler: Jupyter-Scheduler front-end with an Argo-Workflows back-end.
 
@@ -58,22 +58,22 @@ In the Jupyter-Scheduler lab extension, you can create two things, a `Job` and a
 
 A `Job`, or notebook job, is when you submit your notebook to run.
 
-In Argo-Jupyter-Scheduler, this `Job` translates into a `Workflow` in Argo-Workflows. So when you create a `Job`, your notebook job will create a Workflow that will run regardless of whether your JupyterLab server is.
+In Argo-Jupyter-Scheduler, this `Job` translates into a `Workflow` in Argo-Workflows. So when you create a `Job`, your notebook job will create a Workflow that will run regardless of whether or not your JupyterLab server is.
 
-> At the moment, permission to submit Jobs is required which are controlled by Keycloak roles for the `argo-server-sso` client. If your user has either the `argo-admin` or the `argo-developer` roles, they will be permitted to create and submit Jobs (and Job Definitions).
+> At the moment, permission to submit Jobs is required, managed by the Keycloak roles for the `argo-server-sso` client. If your user has either the `argo-admin` or the `argo-developer` roles, they will be permitted to create and submit Jobs (and Job Definitions).
 
-We are relying on the Nebari Workflow Controller to ensure the user's home directory and conda-store environments are mounted to the Workflow. This allows us to ensure:
-- the local data used by the notebook job is accessible
+We are also relying on the [Nebari Workflow Controller](https://github.com/nebari-dev/nebari-workflow-controller) to ensure the user's home directory and conda-store environments are mounted to the Workflow. This allows us to ensure:
+- the files in the user's home directory can be used by the notebook job
 - the output of the notebook can be saved locally
-- when the conda environment used gets updated, it is also updated for the notebook job (helpful for scheduled jobs)
-- the node instance type and image you submit your notebook job from are the same ones used by the workflow
+- when the conda environment that is used gets updated, it is also updated for the notebook job (helpful for scheduled jobs)
+- the node-selector and image you submit your notebook job from are the same ones used by the workflow
 
 
 ### `Job Definition`
 
 A `Job-Definition` is simply a way to create to Jobs that run on a specified schedule.
 
-In Argo-Jupyter-Scheduler, this `Job Definition` translate into a `Cron-Workflow` in Argo-Worflows. So when you create a `Job Definition`, you create a `Cron-Workflow` that creates a `Workflow` to run according to the specified schedule.
+In Argo-Jupyter-Scheduler, `Job Definition` translate into a `Cron-Workflow` in Argo-Worflows. So when you create a `Job Definition`, you create a `Cron-Workflow` which in turn creates a `Workflow` to run when scheduled.
 
 A `Job` is to `Workflow` as `Job Definition` is to `Cron-Workflow`.
 
@@ -83,9 +83,9 @@ A `Job` is to `Workflow` as `Job Definition` is to `Cron-Workflow`.
 
 Jupyter-Scheduler creates and uses a `scheduler.sqlite` database to manage and keep track of the Jobs and Job Definitions. If you can ensure this database is accessible and can be updated when the status of a job or a job definition change, then you can ensure the view the user sees from JupyterLab match is accurate.
 
-> By default this database is located at `~/.local/share/jupyter/scheduler.sqlite` but this is a trailet that can be modified. And since we know where this database is, and it's accessible, we can update the database directly from the workflow it's self.
+> By default this database is located at `~/.local/share/jupyter/scheduler.sqlite` but this is a trailet that can be modified. And since we have access to this database, we can update the database directly from the workflow itself.
 
-To acommplish this, the workflow runs in two steps. First the workflow runs the notebook, using `papermill` and the conda environment specified. And second, depending on the status of this notebook run, updates the database with this status.
+To acommplish this, the workflow runs in two steps. First the workflow runs the notebook, using `papermill` and the conda environment specified. And second, depending on the success of this notebook run, updates the database with this status.
 
 And when a job definition is created, a corresponding cron-workflow is created. To ensure the database is properly updated, the workflow that the cron-workflow creates has three steps. First, create a job record in the database with a status of `IN PROGRESS`. Second, run the notebook, again using `papermill` and the conda environment specified. And third, update the newly created job record with the status of the notebook run.
 
