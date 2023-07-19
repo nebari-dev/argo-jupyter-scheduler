@@ -45,14 +45,12 @@ dependencies = [
 dev = [
   "black",
   "isort",
+  "jupyter_server[test]>=1.6,<3",
   "pre-commit",
+  "pytest-cov",
+  "pytest",
   "pytest",
   "ruff",
-]
-test = [
-    "pytest",
-    "pytest-cov",
-    "jupyter_server[test]>=1.6,<3"
 ]
 
 [project.urls]
