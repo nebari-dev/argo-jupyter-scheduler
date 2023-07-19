@@ -49,6 +49,12 @@ dev = [
   "pytest",
   "ruff",
 ]
+test = [
+    "pytest",
+    "pytest-cov",
+    "jupyter_server[test]>=1.6,<3"
+]
+
 [project.urls]
 Documentation = "https://github.com/nebari-dev/argo-jupyter-scheduler#readme"
 Issues = "https://github.com/nebari-dev/argo-jupyter-scheduler/issues"
