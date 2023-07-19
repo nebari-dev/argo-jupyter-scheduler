@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Union
 
-from hera.workflows import Container, CronWorkflow, Step, Steps, Workflow, script
+from hera.workflows import Container, CronWorkflow, Env, Step, Steps, Workflow, script
 from hera.workflows.models import ContinueOn, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
@@ -37,6 +37,7 @@ class ArgoExecutor(ExecutionManager):
         staging_paths: Union[Dict[str, str], None] = None,
         job_id: Union[str, None] = None,
         job_definition_id: Union[str, None] = None,
+        parameters: Union[Dict[str, str], None] = None,
         schedule: Union[str, None] = None,
         timezone: Union[str, None] = None,
         active: bool = True,
@@ -48,6 +49,7 @@ class ArgoExecutor(ExecutionManager):
         self.action = action
         self.job_id = job_id
         self.job_definition_id = job_definition_id
+        self.parameters = parameters
         self.schedule = schedule
         self.timezone = timezone
         self.active = active
@@ -88,6 +90,7 @@ class ArgoExecutor(ExecutionManager):
             if self.action == WorkflowActionsEnum.create:
                 self.create_workflow(
                     model,
+                    self.parameters,
                     self.staging_paths,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
@@ -105,11 +108,12 @@ class ArgoExecutor(ExecutionManager):
         elif self.job_definition_id:
             if self.action == WorkflowActionsEnum.create:
                 self.create_cron_workflow(
-                    model,
-                    self.staging_paths,
-                    self.job_definition_id,
-                    self.schedule,
-                    self.timezone,
+                    job=model,
+                    staging_paths=self.staging_paths,
+                    job_definition_id=self.job_definition_id,
+                    parameters=self.parameters,
+                    schedule=self.schedule,
+                    timezone=self.timezone,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
                 )
@@ -170,6 +174,7 @@ class ArgoExecutor(ExecutionManager):
     def create_workflow(
         self,
         job: DescribeJob,
+        parameters: Dict[str, str],
         staging_paths: Dict,
         db_url: str,
         use_conda_store_env: bool = True,
@@ -193,11 +198,15 @@ class ArgoExecutor(ExecutionManager):
                 use_conda_store_env,
             ),
         ]
+        envs = []
+        for key, value in parameters.items():
+            envs.append(Env(name=key, value=value))
 
         main = Container(
             name="main",
             command=["/bin/sh"],
             args=cmd_args,
+            env=envs,
         )
 
         failure = "{{steps.main.status}} == Failed"
@@ -275,6 +284,7 @@ class ArgoExecutor(ExecutionManager):
     def _create_cwf_oject(
         self,
         job: DescribeJobDefinition,
+        parameters: Dict[str, str],
         staging_paths: Dict,
         job_definition_id: str,
         schedule: str,
@@ -301,11 +311,15 @@ class ArgoExecutor(ExecutionManager):
                 use_conda_store_env,
             ),
         ]
+        envs = []
+        for key, value in parameters.items():
+            envs.append(Env(name=key, value=value))
 
         main = Container(
             name="main",
             command=["/bin/sh"],
             args=cmd_args,
+            env=envs,
         )
 
         # mimics internals of the `scheduler.create_job_from_definition` method
@@ -369,6 +383,7 @@ class ArgoExecutor(ExecutionManager):
         job: DescribeJobDefinition,
         staging_paths: Dict,
         job_definition_id: str,
+        parameters: Dict[str, str],
         schedule: str,
         timezone: str,
         db_url: str,
@@ -380,6 +395,7 @@ class ArgoExecutor(ExecutionManager):
 
         w = self._create_cwf_oject(
             job=job,
+            parameters=parameters,
             staging_paths=staging_paths,
             job_definition_id=job_definition_id,
             schedule=schedule,
@@ -441,6 +457,7 @@ class ArgoExecutor(ExecutionManager):
 
         w = self._create_cwf_oject(
             job=job,
+            parameters=self.parameters,
             staging_paths=staging_paths,
             job_definition_id=job_definition_id,
             schedule=schedule,

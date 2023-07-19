@@ -97,6 +97,7 @@ class ArgoScheduler(Scheduler):
                 target=self.execution_manager_class(
                     action=WorkflowActionsEnum.create,
                     job_id=job.job_id,
+                    parameters=job.parameters,
                     staging_paths=staging_paths,
                     root_dir=self.root_dir,
                     db_url=self.db_url,
@@ -212,6 +213,7 @@ class ArgoScheduler(Scheduler):
                     root_dir=self.root_dir,
                     db_url=self.db_url,
                     job_definition_id=job_definition_id,
+                    parameters=job_definition.parameters,
                     schedule=job_definition.schedule,
                     timezone=job_definition.timezone,
                     use_conda_store_env=self.use_conda_store_env,
@@ -234,6 +236,9 @@ class ArgoScheduler(Scheduler):
             describe_job_definition = DescribeJobDefinition.from_orm(
                 filtered_query.one()
             )
+            # update schedule/timezone, keep active status if not provided
+            if model.active is None:
+                model.active = True
 
             job_definition = JobDefinition(
                 **model.dict(exclude_none=True, exclude={"input_uri"})
@@ -280,7 +285,7 @@ class ArgoScheduler(Scheduler):
                     job_definition_id=job_definition_id,
                     schedule=job_definition.schedule,
                     timezone=job_definition.timezone,
-                    active=model.active,
+                    active=job_definition.active,
                     use_conda_store_env=self.use_conda_store_env,
                 ).process
             )
