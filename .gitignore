@@ -160,4 +160,4 @@ cython_debug/
 #.idea/
 
 .vscode
-argo_workflows_executor/_version.py
+argo_jupyter_scheduler/_version.py

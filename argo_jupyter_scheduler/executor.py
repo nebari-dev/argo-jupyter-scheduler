@@ -15,7 +15,7 @@ from jupyter_scheduler.models import (
 from jupyter_scheduler.orm import Job, JobDefinition, create_session
 from jupyter_scheduler.utils import get_utc_timestamp
 
-from argo_workflows_executor.utils import (
+from argo_jupyter_scheduler.utils import (
     WorkflowActionsEnum,
     authenticate,
     gen_cron_workflow_name,
@@ -199,8 +199,9 @@ class ArgoExecutor(ExecutionManager):
             ),
         ]
         envs = []
-        for key, value in parameters.items():
-            envs.append(Env(name=key, value=value))
+        if parameters:
+            for key, value in parameters.items():
+                envs.append(Env(name=key, value=value))
 
         main = Container(
             name="main",
@@ -312,8 +313,9 @@ class ArgoExecutor(ExecutionManager):
             ),
         ]
         envs = []
-        for key, value in parameters.items():
-            envs.append(Env(name=key, value=value))
+        if parameters:
+            for key, value in parameters.items():
+                envs.append(Env(name=key, value=value))
 
         main = Container(
             name="main",

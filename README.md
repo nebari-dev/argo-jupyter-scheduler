@@ -1,13 +1,13 @@
-# argo-workflows-executor
+# argo-jupyter-scheduler
 
-[![PyPI - Version](https://img.shields.io/pypi/v/argo-workflows-executor.svg)](https://pypi.org/project/argo-workflows-executor)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/argo-workflows-executor.svg)](https://pypi.org/project/argo-workflows-executor)
+[![PyPI - Version](https://img.shields.io/pypi/v/argo-jupyter-scheduler.svg)](https://pypi.org/project/argo-jupyter-scheduler)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/argo-jupyter-scheduler.svg)](https://pypi.org/project/argo-jupyter-scheduler)
 
 -----
 
 **Table of Contents**
 
-- [argo-workflows-executor](#argo-workflows-executor)
+- [argo-jupyter-scheduler](#argo-jupyter-scheduler)
   - [Installation](#installation)
   - [What is it?](#what-is-it)
   - [A deeper dive](#a-deeper-dive)
@@ -23,7 +23,7 @@ Submit longing running notebooks to run without the need to keep your JupyterLab
 ## Installation
 
 ```console
-pip install argo-workflows-executor
+pip install argo-jupyter-scheduler
 ```
 
 ## What is it?
@@ -34,11 +34,11 @@ What does that mean?
 
 This means this is an application that gets installed in the JupyterLab base image and runs as an extension in JupyterLab. Specifically, you will see this icon at the bottom of the JupyterLab Launcher tab: 
 
-<img width="758" alt="Screenshot 2023-07-12 at 20 48 23" src="https://github.com/nebari-dev/argo-workflows-executor/assets/42120229/a0a27a2e-1c75-404c-8fe6-2328cbb31cba">
+<img width="758" alt="Screenshot 2023-07-12 at 20 48 23" src="https://github.com/nebari-dev/argo-jupyter-scheduler/assets/42120229/a0a27a2e-1c75-404c-8fe6-2328cbb31cba">
 
 And this icon on the toolbar of your Jupyter Notebook:
 
-<img width="1227" alt="jupyter-scheduler-icon" src="https://github.com/nebari-dev/argo-workflows-executor/assets/42120229/cae78aec-4d58-4d71-81cf-c73ed293bf64">
+<img width="1227" alt="jupyter-scheduler-icon" src="https://github.com/nebari-dev/argo-jupyter-scheduler/assets/42120229/cae78aec-4d58-4d71-81cf-c73ed293bf64">
 
 This also means, as a lab extension, this application is running within each user's separate JupyterLab server. The record of the notebooks you've submitted is specific to you and you only. There is no central Jupyter-Scheduler. 
 
@@ -91,4 +91,4 @@ And when a job definition is created, a corresponding cron-workflow is created. 
 
 ## License
 
-`argo-workflows-executor` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
+`argo-jupyter-scheduler` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.

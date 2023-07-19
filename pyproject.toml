@@ -3,17 +3,17 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-include = ["argo_workflows_executor"]
+include = ["argo_jupyter_scheduler"]
 
 [tool.hatch.version]
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "argo_workflows_executor/_version.py"
+version-file = "argo_jupyter_scheduler/_version.py"
 local_scheme = "node-and-timestamp"
 
 [project]
-name = "argo-workflows-executor"
+name = "argo-jupyter-scheduler"
 dynamic = ["version"]
 description = 'Argo-Workflow backend extension for Jupyter-Scheduler.'
 readme = "README.md"
@@ -50,9 +50,9 @@ dev = [
   "ruff",
 ]
 [project.urls]
-Documentation = "https://github.com/nebari-dev/argo-workflows-executor#readme"
-Issues = "https://github.com/nebari-dev/argo-workflows-executor/issues"
-Source = "https://github.com/nebari-dev/argo-workflows-executor"
+Documentation = "https://github.com/nebari-dev/argo-jupyter-scheduler#readme"
+Issues = "https://github.com/nebari-dev/argo-jupyter-scheduler/issues"
+Source = "https://github.com/nebari-dev/argo-jupyter-scheduler"
 
 [[tool.hatch.envs.all.matrix]]
 python = ["3.7", "3.8", "3.9", "3.10", "3.11"]
@@ -65,7 +65,7 @@ dependencies = [
   "ruff>=0.0.243",
 ]
 [tool.hatch.envs.lint.scripts]
-typing = "mypy --install-types --non-interactive {args:argo_workflows_executor tests}"
+typing = "mypy --install-types --non-interactive {args:argo_jupyter_scheduler tests}"
 style = [
   "ruff {args:.}",
   "black --check --diff {args:.}",
@@ -131,7 +131,7 @@ unfixable = [
 ]
 
 [tool.ruff.isort]
-known-first-party = ["argo_workflows_executor"]
+known-first-party = ["argo_jupyter_scheduler"]
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"

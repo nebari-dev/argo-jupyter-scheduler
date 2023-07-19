@@ -43,6 +43,10 @@ logger = setup_logger(__name__)
 
 
 def authenticate():
+    namespace = os.environ["ARGO_NAMESPACE"]
+    if not namespace:
+        namespace = "dev"
+
     token = os.environ["ARGO_TOKEN"]
     if token.startswith("Bearer"):
         token = token.split(" ")[-1]
@@ -53,9 +57,6 @@ def authenticate():
 
     server = f"https://{os.environ['ARGO_SERVER']}"
     host = urljoin(server, base_href)
-
-    # TODO: allow users to specify or pull in from elsewhere
-    namespace = "dev"
 
     global_config.host = host
     global_config.token = token

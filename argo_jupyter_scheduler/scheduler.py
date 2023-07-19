@@ -23,9 +23,9 @@ from jupyter_server.transutils import _i18n
 from traitlets import Bool, Instance
 from traitlets import Type as TType
 
-from argo_workflows_executor.executor import ArgoExecutor
-from argo_workflows_executor.task_runner import ArgoTaskRunner
-from argo_workflows_executor.utils import WorkflowActionsEnum, setup_logger
+from argo_jupyter_scheduler.executor import ArgoExecutor
+from argo_jupyter_scheduler.task_runner import ArgoTaskRunner
+from argo_jupyter_scheduler.utils import WorkflowActionsEnum, setup_logger
 
 logger = setup_logger(__name__)
 

@@ -4,7 +4,7 @@ from jupyter_scheduler.task_runner import (
     UpdateJobDefinitionCache,
 )
 
-from argo_workflows_executor.utils import setup_logger
+from argo_jupyter_scheduler.utils import setup_logger
 
 logger = setup_logger(__name__)
 
