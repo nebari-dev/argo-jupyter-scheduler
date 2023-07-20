@@ -2,7 +2,7 @@ import os
 from typing import Dict, Union
 
 from hera.workflows import Container, CronWorkflow, Env, Step, Steps, Workflow, script
-from hera.workflows.models import ContinueOn, WorkflowStopRequest
+from hera.workflows.models import ContinueOn, TTLStrategy, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
 from jupyter_scheduler.models import (
@@ -26,6 +26,8 @@ from argo_jupyter_scheduler.utils import (
 )
 
 logger = setup_logger(__name__)
+
+DEFAULT_TTL = 600
 
 
 class ArgoExecutor(ExecutionManager):
@@ -210,11 +212,20 @@ class ArgoExecutor(ExecutionManager):
             env=envs,
         )
 
+        ttl_strategy = TTLStrategy(
+            seconds_after_completion=DEFAULT_TTL,
+            seconds_after_success=DEFAULT_TTL,
+            seconds_after_failure=DEFAULT_TTL,
+        )
+
         failure = "{{steps.main.status}} == Failed"
         successful = "{{steps.main.status}} == Succeeded"
 
         with Workflow(
-            name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels
+            name=gen_workflow_name(job.job_id),
+            entrypoint="steps",
+            labels=labels,
+            ttl_strategy=ttl_strategy,
         ) as w:
             with Steps(name="steps"):
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
@@ -320,6 +331,11 @@ class ArgoExecutor(ExecutionManager):
             args=cmd_args,
             env=envs,
         )
+        ttl_strategy = TTLStrategy(
+            seconds_after_completion=DEFAULT_TTL,
+            seconds_after_success=DEFAULT_TTL,
+            seconds_after_failure=DEFAULT_TTL,
+        )
 
         # mimics internals of the `scheduler.create_job_from_definition` method
         attributes = {
@@ -342,6 +358,7 @@ class ArgoExecutor(ExecutionManager):
             failed_jobs_history_limit=4,
             cron_suspend=suspend,
             labels=labels,
+            ttl_strategy=ttl_strategy,
         ) as cwf:
             with Steps(name="steps"):
                 create_job_record(
