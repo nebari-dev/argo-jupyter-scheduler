@@ -89,9 +89,9 @@ class ArgoExecutor(ExecutionManager):
         if self.job_id:
             if self.action == WorkflowActionsEnum.create:
                 self.create_workflow(
-                    model,
-                    self.parameters,
-                    self.staging_paths,
+                    job=model,
+                    parameters=self.parameters,
+                    staging_paths=self.staging_paths,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
                 )
@@ -119,12 +119,12 @@ class ArgoExecutor(ExecutionManager):
                 )
             elif self.action == WorkflowActionsEnum.update:
                 self.update_cron_workflow(
-                    model,
-                    self.staging_paths,
-                    self.job_definition_id,
-                    self.schedule,
-                    self.timezone,
-                    self.active,
+                    job=model,
+                    staging_paths=self.staging_paths,
+                    job_definition_id=self.job_definition_id,
+                    schedule=self.schedule,
+                    timezone=self.timezone,
+                    active=self.active,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
                 )
@@ -216,21 +216,18 @@ class ArgoExecutor(ExecutionManager):
         with Workflow(
             name=gen_workflow_name(job.job_id), entrypoint="steps", labels=labels
         ) as w:
-            main_step = Step(
-                name="main", template=main, continue_on=ContinueOn(failed=True)
-            )
-            failure_script = update_job_status_failure(
-                name="failure",
-                arguments={"db_url": db_url, "job_id": job.job_id},
-                when=failure,
-            )
-            success_script = update_job_status_success(
-                name="success",
-                arguments={"db_url": db_url, "job_id": job.job_id},
-                when=successful,
-            )
-
-            Steps(name="steps", sub_steps=[main_step, failure_script, success_script])
+            with Steps(name="steps"):
+                Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+                update_job_status_failure(
+                    name="failure",
+                    arguments={"db_url": db_url, "job_id": job.job_id},
+                    when=failure,
+                )
+                update_job_status_success(
+                    name="success",
+                    arguments={"db_url": db_url, "job_id": job.job_id},
+                    when=successful,
+                )
 
         w.create()
 
@@ -346,37 +343,32 @@ class ArgoExecutor(ExecutionManager):
             cron_suspend=suspend,
             labels=labels,
         ) as cwf:
-            create_job_record_script = create_job_record(
-                name="create-job-id",
-                arguments={
-                    "model": model,
-                    "db_url": db_url,
-                    "job_definition_id": job_definition_id,
-                },
-            )
-            main_step = Step(
-                name="main", template=main, continue_on=ContinueOn(failed=True)
-            )
-            failure_script = update_job_status_failure(
-                name="failure",
-                arguments={"db_url": db_url, "job_definition_id": job_definition_id},
-                when=failure,
-            )
-            success_script = update_job_status_success(
-                name="success",
-                arguments={"db_url": db_url, "job_definition_id": job_definition_id},
-                when=successful,
-            )
-
-            Steps(
-                name="steps",
-                sub_steps=[
-                    create_job_record_script,
-                    main_step,
-                    failure_script,
-                    success_script,
-                ],
-            )
+            with Steps(name="steps"):
+                create_job_record(
+                    name="create-job-id",
+                    arguments={
+                        "model": model,
+                        "db_url": db_url,
+                        "job_definition_id": job_definition_id,
+                    },
+                )
+                Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+                update_job_status_failure(
+                    name="failure",
+                    arguments={
+                        "db_url": db_url,
+                        "job_definition_id": job_definition_id,
+                    },
+                    when=failure,
+                )
+                update_job_status_success(
+                    name="success",
+                    arguments={
+                        "db_url": db_url,
+                        "job_definition_id": job_definition_id,
+                    },
+                    when=successful,
+                )
 
         return cwf
 
