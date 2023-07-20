@@ -14,6 +14,7 @@
     - [`Job`](#job)
     - [`Job Definition`](#job-definition)
     - [Internals](#internals)
+  - [Additional thoughts](#additional-thoughts)
   - [License](#license)
 
 **Argo-Jupyter-Scheduler**
@@ -78,7 +79,6 @@ In Argo-Jupyter-Scheduler, `Job Definition` translate into a `Cron-Workflow` in 
 A `Job` is to `Workflow` as `Job Definition` is to `Cron-Workflow`.
 
 
-
 ### Internals
 
 Jupyter-Scheduler creates and uses a `scheduler.sqlite` database to manage and keep track of the Jobs and Job Definitions. If you can ensure this database is accessible and can be updated when the status of a job or a job definition change, then you can ensure the view the user sees from JupyterLab match is accurate.
@@ -88,6 +88,12 @@ Jupyter-Scheduler creates and uses a `scheduler.sqlite` database to manage and k
 To acommplish this, the workflow runs in two steps. First the workflow runs the notebook, using `papermill` and the conda environment specified. And second, depending on the success of this notebook run, updates the database with this status.
 
 And when a job definition is created, a corresponding cron-workflow is created. To ensure the database is properly updated, the workflow that the cron-workflow creates has three steps. First, create a job record in the database with a status of `IN PROGRESS`. Second, run the notebook, again using `papermill` and the conda environment specified. And third, update the newly created job record with the status of the notebook run.
+
+
+## Additional Thoughts
+
+At the moment, Argo-Jupyter-Scheduler is closely coupled with Nebari (via the Nebari-Workflow-Controller) which doesn't make it very useable for other projects. There's no need for this to necessarily be the case. By leveraging Traitlets, we can include other ways of modifying the pod spec for the running workflow and enable it to be used by other projects. If you're interested in this project and would like to see it extended, feel free to open an issue to discuss your ideas. Thank you :)
+
 
 ## License
 
