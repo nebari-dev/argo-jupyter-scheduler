@@ -52,7 +52,7 @@ jobs:
           argo-jupyter-scheduler==${{ env.VERSION_TAG }}
 
   release-pypi:
-    name: Publish Nebari-Workflow-Controller on PyPi
+    name: Publish Argo-Jupyter-Scheduler on PyPi
     runs-on: ubuntu-latest
     needs: test-pypi
     permissions:
