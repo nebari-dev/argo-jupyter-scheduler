@@ -15,6 +15,7 @@
     - [`Job Definition`](#job-definition)
     - [Internals](#internals)
   - [Additional thoughts](#additional-thoughts)
+  - [Known issues](#known-issues)
   - [License](#license)
 
 **Argo-Jupyter-Scheduler**
@@ -94,6 +95,9 @@ And when a job definition is created, a corresponding cron-workflow is created. 
 
 At the moment, Argo-Jupyter-Scheduler is closely coupled with Nebari (via the Nebari-Workflow-Controller) which doesn't make it very useable for other projects. There's no need for this to necessarily be the case. By leveraging Traitlets, we can include other ways of modifying the pod spec for the running workflow and enable it to be used by other projects. If you're interested in this project and would like to see it extended, feel free to open an issue to discuss your ideas. Thank you :)
 
+## Known Issues
+
+All of the core features of Jupyter-Scheduler have been mapped over to Argo-Jupyter-Scheduler. Unfortunately, there is currently a limitation with `Update Job Definition` and with `Pause`/`Resume` for Job Definitions. Although the `Pause` works, the `Resume` fails for the same reason `Update Job Definition` does and this is because the upstream Nebari-Workflow-Controller (see [Known Limitations](https://github.com/nebari-dev/nebari-workflow-controller#known-limitations)) has a limitation whereby it can't resubmit workflows/cron-workflows; there are more details in [this issue](https://github.com/nebari-dev/nebari-workflow-controller/issues/18).
 
 ## License
 
