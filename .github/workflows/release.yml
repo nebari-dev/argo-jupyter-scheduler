@@ -30,7 +30,7 @@ jobs:
 
       - name: List tags
         run: |
-          git tags
+          git tag
 
       - name: Method 1 to get latest tag
         run: |
