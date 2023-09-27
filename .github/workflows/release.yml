@@ -28,10 +28,25 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: List tags
+        run: |
+          git tags
+
+      - name: Method 1 to get latest tag
+        run: |
+          echo $(git rev-list --tags --max-count=1 | xargs git describe --tags)
+
+      - name: Method 2 to get latest tag
+        run: |
+          echo $(git for-each-ref --sort=-committerdate refs/tags --format '%(refname:short)' | head -n 1)
+
       - name: Create tag
         # if present, remove leading `v`
         run: |
           echo "VERSION_TAG=$(git describe --tags | sed 's/^v//')" >> $GITHUB_ENV
+
+      - name: Print tag
+        run: |
           echo ${{ env.VERSION_TAG }}
 
       - name: Build source and binary
