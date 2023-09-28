@@ -26,26 +26,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          fetch-tags: true
 
-      - name: List tags
+        # Ensure the last tag created is used
+      - name: Set VERSION_TAG
         run: |
-          git tag
+          response=$(curl --silent "https://api.github.com/repos/$GITHUB_REPOSITORY/releases")
+          latest_date=""
+          latest_release=""
+          
+          length=$(echo "$response" | jq '. | length')
+          for (( i=0; i<length; i++ )); do
+              current_date=$(echo "$response" | jq -r ".[$i].created_at")
+              if [[ "$current_date" > "$latest_date" ]]; then
+                  latest_date="$current_date"
+                  latest_release=$(echo "$response" | jq -r ".[$i]")
+              fi
+          done
+          VERSION_TAG=$(echo "$latest_release" | jq -r '.tag_name')
+          echo "VERSION_TAG=$(echo $VERSION_TAG)" >> $GITHUB_ENV
 
-      - name: Method 1 to get latest tag
-        run: |
-          echo $(git rev-list --tags --max-count=1 | xargs git describe --tags)
-
-      - name: Method 2 to get latest tag
-        run: |
-          echo $(git for-each-ref --sort=-committerdate refs/tags --format '%(refname:short)' | head -n 1)
-
-      - name: Create tag
-        # if present, remove leading `v`
-        run: |
-          echo "VERSION_TAG=$(git describe --tags | sed 's/^v//')" >> $GITHUB_ENV
-
-      - name: Print tag
+      - name: Print VERSION_TAG
         run: |
           echo ${{ env.VERSION_TAG }}
 
@@ -85,7 +85,7 @@ jobs:
         run: python -m pip install --upgrade pip build
 
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
