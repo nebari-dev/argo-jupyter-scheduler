@@ -19,6 +19,7 @@ from argo_jupyter_scheduler.utils import (
     WorkflowActionsEnum,
     authenticate,
     gen_cron_workflow_name,
+    gen_html_path,
     gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
@@ -192,14 +193,12 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        cmd_args = [
-            "-c",
-            *gen_papermill_command_input(
-                job.runtime_environment_name,
-                staging_paths["input"],
-                use_conda_store_env,
-            ),
-        ]
+        input_path = staging_paths["input"]
+        cmd_args = gen_papermill_command_input(
+            job.runtime_environment_name,
+            input_path,
+            use_conda_store_env,
+        )
         envs = []
         if parameters:
             for key, value in parameters.items():
@@ -208,7 +207,7 @@ class ArgoExecutor(ExecutionManager):
         main = Container(
             name="main",
             command=["/bin/sh"],
-            args=cmd_args,
+            args=["-c", f"{cmd_args}"],
             env=envs,
         )
 
@@ -229,11 +228,28 @@ class ArgoExecutor(ExecutionManager):
         ) as w:
             with Steps(name="steps"):
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+
+                token, channel = get_slack_token_channel(envs)
+                if token is not None and channel is not None:
+                    send_to_slack(
+                        name="send-to-slack",
+                        arguments={
+                            "token": token,
+                            "channel": channel,
+                            "file_path": str(gen_html_path(input_path)),
+                        },
+                        when=successful,
+                        continue_on=ContinueOn(failed=True),
+                    )
+                    failure += " || {{steps.send-to-slack.status}} == Failed"
+                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
+
                 update_job_status_failure(
                     name="failure",
                     arguments={"db_url": db_url, "job_id": job.job_id},
                     when=failure,
                 )
+
                 update_job_status_success(
                     name="success",
                     arguments={"db_url": db_url, "job_id": job.job_id},
@@ -312,14 +328,12 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        cmd_args = [
-            "-c",
-            *gen_papermill_command_input(
-                job.runtime_environment_name,
-                staging_paths["input"],
-                use_conda_store_env,
-            ),
-        ]
+        input_path = staging_paths["input"]
+        cmd_args = gen_papermill_command_input(
+            job.runtime_environment_name,
+            input_path,
+            use_conda_store_env,
+        )
         envs = []
         if parameters:
             for key, value in parameters.items():
@@ -328,7 +342,7 @@ class ArgoExecutor(ExecutionManager):
         main = Container(
             name="main",
             command=["/bin/sh"],
-            args=cmd_args,
+            args=["-c", f"{cmd_args}"],
             env=envs,
         )
         ttl_strategy = TTLStrategy(
@@ -340,7 +354,7 @@ class ArgoExecutor(ExecutionManager):
         # mimics internals of the `scheduler.create_job_from_definition` method
         attributes = {
             **job.dict(exclude={"schedule", "timezone"}, exclude_none=True),
-            "input_uri": staging_paths["input"],
+            "input_uri": input_path,
         }
         model = CreateJob(**attributes)
 
@@ -369,7 +383,24 @@ class ArgoExecutor(ExecutionManager):
                         "job_definition_id": job_definition_id,
                     },
                 )
+
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+
+                token, channel = get_slack_token_channel(envs)
+                if token is not None and channel is not None:
+                    send_to_slack(
+                        name="send-to-slack",
+                        arguments={
+                            "token": token,
+                            "channel": channel,
+                            "file_path": str(gen_html_path(input_path)),
+                        },
+                        when=successful,
+                        continue_on=ContinueOn(failed=True),
+                    )
+                    failure += " || {{steps.send-to-slack.status}} == Failed"
+                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
+
                 update_job_status_failure(
                     name="failure",
                     arguments={
@@ -378,6 +409,7 @@ class ArgoExecutor(ExecutionManager):
                     },
                     when=failure,
                 )
+
                 update_job_status_success(
                     name="success",
                     arguments={
@@ -573,3 +605,34 @@ def create_job_record(
 
         session.add(job)
         session.commit()
+
+
+def get_slack_token_channel(envs):
+    token = None
+    channel = None
+    for env in envs:
+        if env.name == 'SLACK_TOKEN':
+            token = env.value
+        elif env.name == 'SLACK_CHANNEL':
+            channel = env.value
+    return token, channel
+
+
+@script()
+def send_to_slack(token, channel, file_path):
+    import json
+    import subprocess
+
+    command = [
+        "curl",
+        "-F", f"file=@{file_path}",
+        "-F", "initial_comment=Attaching new file",
+        "-F", f"channels={channel}",
+        "-H", f"Authorization: Bearer {token}",
+        "https://slack.com/api/files.upload"
+    ]
+    result = subprocess.check_output(command)
+    print(result)
+    d = json.loads(result)
+    if not d.get("ok"):
+        raise Exception("Failed to send to Slack")
