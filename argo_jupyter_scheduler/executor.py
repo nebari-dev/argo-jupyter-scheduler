@@ -616,18 +616,32 @@ def get_slack_token_channel(parameters):
 @script()
 def send_to_slack(token, channel, file_path):
     import json
-    import subprocess
+    import requests
 
-    command = [
-        "curl",
-        "-F", f"file=@{file_path}",
-        "-F", "initial_comment=Attaching new file",
-        "-F", f"channels={channel}",
-        "-H", f"Authorization: Bearer {token}",
-        "https://slack.com/api/files.upload"
-    ]
-    result = subprocess.check_output(command)
-    print(result)
-    d = json.loads(result)
-    if not d.get("ok"):
-        raise Exception("Failed to send to Slack")
+    try:
+        url = "https://slack.com/api/files.upload"
+
+        files = {'file': (file_path.name, open(file_path, 'rb'))}
+
+        data = {
+            'initial_comment': 'Attaching new file',
+            'channels': channel,
+        }
+
+        headers = {
+            'Authorization': f'Bearer {token}',
+        }
+
+        response = requests.post(url, files=files, data=data, headers=headers)
+        response.raise_for_status()
+
+        response = response.text
+        print(f"Slack response: {response}")
+
+        if not json.loads(response).get("ok"):
+            raise Exception("Unexpected response when sending to Slack")
+
+        print(f"Successfully sent to Slack")
+
+    except Exception as e:
+        raise Exception("Failed to send to Slack") from e
