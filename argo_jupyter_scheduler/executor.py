@@ -229,7 +229,7 @@ class ArgoExecutor(ExecutionManager):
             with Steps(name="steps"):
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
-                token, channel = get_slack_token_channel(envs)
+                token, channel = get_slack_token_channel(parameters)
                 if token is not None and channel is not None:
                     send_to_slack(
                         name="send-to-slack",
@@ -386,7 +386,7 @@ class ArgoExecutor(ExecutionManager):
 
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
-                token, channel = get_slack_token_channel(envs)
+                token, channel = get_slack_token_channel(parameters)
                 if token is not None and channel is not None:
                     send_to_slack(
                         name="send-to-slack",
@@ -607,14 +607,9 @@ def create_job_record(
         session.commit()
 
 
-def get_slack_token_channel(envs):
-    token = None
-    channel = None
-    for env in envs:
-        if env.name == 'SLACK_TOKEN':
-            token = env.value
-        elif env.name == 'SLACK_CHANNEL':
-            channel = env.value
+def get_slack_token_channel(parameters):
+    token = parameters.get("SLACK_TOKEN")
+    channel = parameters.get("SLACK_CHANNEL")
     return token, channel
 
 
