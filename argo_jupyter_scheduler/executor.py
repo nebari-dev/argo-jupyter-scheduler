@@ -207,7 +207,7 @@ class ArgoExecutor(ExecutionManager):
         main = Container(
             name="main",
             command=["/bin/sh"],
-            args=["-c", f"{cmd_args}"],
+            args=["-c", cmd_args],
             env=envs,
         )
 
@@ -342,7 +342,7 @@ class ArgoExecutor(ExecutionManager):
         main = Container(
             name="main",
             command=["/bin/sh"],
-            args=["-c", f"{cmd_args}"],
+            args=["-c", cmd_args],
             env=envs,
         )
         ttl_strategy = TTLStrategy(
