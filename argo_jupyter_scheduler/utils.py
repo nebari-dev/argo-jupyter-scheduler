@@ -177,18 +177,10 @@ def gen_papermill_command_input(
     logger.info(f"log_path: {log_path}")
     logger.info(f"html_path: {html_path}")
 
-    return (
-        f"conda run -p {conda_env_path} /bin/sh -c "
-        "\"{ "
-        f"papermill -k {kernel_name} {input_path} {output_path}"
-        " && "
-        f"jupyter nbconvert --to html {output_path} --output {html_path}"
-        " ; "
-        " } "
-        " > "
-        f"{log_path}"
-        " 2>&1\""
-    )
+    papermill = f"papermill -k {kernel_name} {input_path} {output_path}"
+    jupyter = f"jupyter nbconvert --to html {output_path} --output {html_path}"
+
+    return f"conda run -p {conda_env_path} /bin/sh -c \"{{ {papermill} && {jupyter} ; }} > {log_path} 2>&1\""
 
 
 def sanitize_label(s: str):
