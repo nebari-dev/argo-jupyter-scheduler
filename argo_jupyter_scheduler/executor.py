@@ -241,7 +241,6 @@ class ArgoExecutor(ExecutionManager):
                             "channel": channel,
                             "file_path": str(gen_html_path(input_path)),
                             "log_path": str(gen_log_path(input_path)),
-                            "logger": logger,
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -402,7 +401,6 @@ class ArgoExecutor(ExecutionManager):
                             "channel": channel,
                             "file_path": str(gen_html_path(input_path)),
                             "log_path": str(gen_log_path(input_path)),
-                            "logger": logger,
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -623,15 +621,17 @@ def get_slack_token_channel(parameters):
 
 
 @script()
-def send_to_slack(token, channel, file_path, log_path, logger):
+def send_to_slack(token, channel, file_path, log_path):
     import json
     import logging
 
     import requests
+    import utils
 
     try:
+        logger = utils.setup_logger("send_to_slack")
+        logger.setLevel(logging.DEBUG)
         fh = logging.FileHandler(log_path)
-        fh.setLevel(logging.DEBUG)
         logger.addHandler(fh)
 
         url = "https://slack.com/api/files.upload"
