@@ -52,6 +52,21 @@ If you want to run your Jupyter Notebook on a schedule, you need to be assured t
 
 The solution is Argo-Jupyter-Scheduler: Jupyter-Scheduler front-end with an Argo-Workflows back-end.
 
+## Optional features
+
+### Sending to Slack
+
+Argo-Jupyter-Scheduler allows sending HTML output of an executed notebook to a
+Slack channel:
+
+- See the Slack API docs on how to create a bot token (starts with `xoxb`)
+- Invite your bot to a Slack channel which will be used for sending output
+- When scheduling a notebook (as described above):
+  - Select a conda environment that has `papermill` installed
+  - Add the following `Parameters`:
+    - name: `SLACK_TOKEN`, value: `xoxb-<Slack bot token>`
+    - name: `SLACK_CHANNEL`, value: `<Slack channel name>` (without leading `#`, like `scheduled-jobs`).
+
 ## A deeper dive
 
 In the Jupyter-Scheduler lab extension, you can create two things, a `Job` and a `Job Definition`.
