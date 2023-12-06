@@ -20,6 +20,7 @@ from argo_jupyter_scheduler.utils import (
     authenticate,
     gen_cron_workflow_name,
     gen_html_path,
+    gen_log_path,
     gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
