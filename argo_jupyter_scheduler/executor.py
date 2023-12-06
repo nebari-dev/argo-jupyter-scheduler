@@ -622,7 +622,7 @@ def send_to_slack(token, channel, file_path):
     try:
         url = "https://slack.com/api/files.upload"
 
-        files = {"file": (file_path.name, open(file_path, "rb"))}
+        files = {"file": (os.path.basename(file_path), open(file_path, "rb"))}
 
         data = {
             "initial_comment": "Attaching new file",
