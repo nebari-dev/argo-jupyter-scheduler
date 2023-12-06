@@ -241,6 +241,7 @@ class ArgoExecutor(ExecutionManager):
                             "channel": channel,
                             "file_path": str(gen_html_path(input_path)),
                             "log_path": str(gen_log_path(input_path)),
+                            "logger": logger,
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -401,6 +402,7 @@ class ArgoExecutor(ExecutionManager):
                             "channel": channel,
                             "file_path": str(gen_html_path(input_path)),
                             "log_path": str(gen_log_path(input_path)),
+                            "logger": logger,
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -621,7 +623,7 @@ def get_slack_token_channel(parameters):
 
 
 @script()
-def send_to_slack(token, channel, file_path, log_path):
+def send_to_slack(token, channel, file_path, log_path, logger):
     import json
     import logging
 
