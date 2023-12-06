@@ -239,6 +239,7 @@ class ArgoExecutor(ExecutionManager):
                             "token": token,
                             "channel": channel,
                             "file_path": str(gen_html_path(input_path)),
+                            "log_path": str(gen_log_path(input_path)),
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -398,6 +399,7 @@ class ArgoExecutor(ExecutionManager):
                             "token": token,
                             "channel": channel,
                             "file_path": str(gen_html_path(input_path)),
+                            "log_path": str(gen_log_path(input_path)),
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -618,12 +620,17 @@ def get_slack_token_channel(parameters):
 
 
 @script()
-def send_to_slack(token, channel, file_path):
+def send_to_slack(token, channel, file_path, log_path):
     import json
+    import logging
 
     import requests
 
     try:
+        fh = logging.FileHandler(log_path)
+        fh.setLevel(logging.DEBUG)
+        logger.addHandler(fh)
+
         url = "https://slack.com/api/files.upload"
 
         files = {"file": (os.path.basename(file_path), open(file_path, "rb"))}
@@ -637,20 +644,26 @@ def send_to_slack(token, channel, file_path):
             "Authorization": f"Bearer {token}",
         }
 
+        logger.info(f"Sending to Slack: file: {file_path}, channel: {channel}")
         response = requests.post(
             url, files=files, data=data, headers=headers, timeout=30
         )
         response.raise_for_status()
 
         response = response.text
-        print(f"Slack response: {response}")  # noqa: T201
+        logger.info(f"Slack response: {response}")
 
         if not json.loads(response).get("ok"):
             msg = "Unexpected response when sending to Slack"
+            logger.info(msg)
             raise Exception(msg)
 
-        print("Successfully sent to Slack")  # noqa: T201
+        logger.info("Successfully sent to Slack")
 
     except Exception as e:
         msg = "Failed to send to Slack"
+        logger.info(msg)
         raise Exception(msg) from e
+
+    finally:
+        logger.removeHandler(fh)
