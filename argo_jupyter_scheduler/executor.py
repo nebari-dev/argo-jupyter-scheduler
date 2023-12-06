@@ -203,6 +203,8 @@ class ArgoExecutor(ExecutionManager):
         if parameters:
             for key, value in parameters.items():
                 envs.append(Env(name=key, value=value))
+        else:
+            parameters = {}
 
         main = Container(
             name="main",
@@ -338,6 +340,8 @@ class ArgoExecutor(ExecutionManager):
         if parameters:
             for key, value in parameters.items():
                 envs.append(Env(name=key, value=value))
+        else:
+            parameters = {}
 
         main = Container(
             name="main",
