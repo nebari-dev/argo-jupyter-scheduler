@@ -626,10 +626,11 @@ def send_to_slack(token, channel, file_path, log_path):
     import logging
 
     import requests
-    import utils
+
+    from argo_jupyter_scheduler.utils import setup_logger
 
     try:
-        logger = utils.setup_logger("send_to_slack")
+        logger = setup_logger("send_to_slack")
         logger.setLevel(logging.DEBUG)
         fh = logging.FileHandler(log_path)
         logger.addHandler(fh)
