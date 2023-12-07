@@ -216,13 +216,13 @@ class ArgoExecutor(ExecutionManager):
             if start_time is None:
                 db_session = create_session(db_url)
                 with db_session() as session:
-                    job = (
+                    q = (
                         session.query(Job)
                         .filter(Job.job_definition_id == job_definition_id)
                         .order_by(Job.id.desc())
                         .first()
                     )
-                    start_time = job.start_time
+                    start_time = q.start_time
 
             start_time = gen_timestamp(start_time)
 
@@ -394,13 +394,13 @@ class ArgoExecutor(ExecutionManager):
             if start_time is None:
                 db_session = create_session(db_url)
                 with db_session() as session:
-                    job = (
+                    q = (
                         session.query(Job)
                         .filter(Job.job_definition_id == job_definition_id)
                         .order_by(Job.id.desc())
                         .first()
                     )
-                    start_time = job.start_time
+                    start_time = q.start_time
 
             start_time = gen_timestamp(start_time)
 
