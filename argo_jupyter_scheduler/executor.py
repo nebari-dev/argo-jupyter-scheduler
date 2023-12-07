@@ -233,6 +233,7 @@ class ArgoExecutor(ExecutionManager):
             )
             main = Container(
                 name="main",
+                inputs=[Parameter(name="output_path"), Parameter(name="html_path")],
                 command=["/bin/sh"],
                 args=["-c", cmd_args],
                 env=envs,
@@ -401,6 +402,7 @@ class ArgoExecutor(ExecutionManager):
             )
             main = Container(
                 name="main",
+                inputs=[Parameter(name="output_path"), Parameter(name="html_path")],
                 command=["/bin/sh"],
                 args=["-c", cmd_args],
                 env=envs,
