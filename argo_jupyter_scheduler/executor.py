@@ -652,11 +652,7 @@ def main(
 ):
     import subprocess
 
-    from argo_jupyter_scheduler.utils import (
-        add_file_logger,
-        gen_conda_env_path,
-        setup_logger,
-    )
+    from argo_jupyter_scheduler.utils import gen_conda_env_path
 
     try:
         # TODO: allow overrides
