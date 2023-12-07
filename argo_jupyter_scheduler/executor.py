@@ -441,20 +441,19 @@ class ArgoExecutor(ExecutionManager):
             main = main(input_path, log_path)
 
             with Steps(name="steps"):
-                start_time = get_utc_timestamp()
-
-                output_path = gen_output_path(input_path, start_time)
-                html_path = gen_html_path(input_path, start_time)
-
-                create_job_record(
+                create_job_step = create_job_record(
                     name="create-job-id",
                     arguments={
                         "model": model,
                         "db_url": db_url,
                         "job_definition_id": job_definition_id,
-                        "start_time": start_time,
                     },
                 )
+
+                start_time = int(create_job_step.result)
+
+                output_path = gen_output_path(input_path, start_time)
+                html_path = gen_html_path(input_path, start_time)
 
                 main(
                     name="main",
@@ -656,11 +655,11 @@ def create_job_record(
     model,
     db_url,
     job_definition_id,
-    start_time,
 ):
     from jupyter_scheduler.exceptions import IdempotencyTokenError
     from jupyter_scheduler.models import CreateJob, Status
     from jupyter_scheduler.orm import Job, create_session
+    from jupyter_scheduler.utils import get_utc_timestamp
 
     model = CreateJob(**model)
 
@@ -681,6 +680,8 @@ def create_job_record(
         job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
         job.job_definition_id = job_definition_id
         job.status = Status.IN_PROGRESS
+        start_time = get_utc_timestamp()
+        print(start_time)  # noqa: T201
         job.start_time = start_time
 
         session.add(job)
