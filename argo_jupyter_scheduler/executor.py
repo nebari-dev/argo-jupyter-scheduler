@@ -211,6 +211,23 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
+        def main(input_path, output_path, html_path, log_path):
+            cmd_args = gen_papermill_command_input(
+                conda_env_name=job.runtime_environment_name,
+                input_path=input_path,
+                output_path=output_path,
+                html_path=html_path,
+                log_path=log_path,
+                use_conda_store_env=use_conda_store_env,
+            )
+            main = Container(
+                name="main",
+                command=["/bin/sh"],
+                args=["-c", cmd_args],
+                env=envs,
+            )
+            return main
+
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -232,22 +249,16 @@ class ArgoExecutor(ExecutionManager):
                 output_path = gen_output_path(input_path, start_time)
                 html_path = gen_html_path(input_path, start_time)
 
-                cmd_args = gen_papermill_command_input(
-                    conda_env_name=job.runtime_environment_name,
-                    input_path=input_path,
-                    output_path=output_path,
-                    html_path=html_path,
-                    log_path=log_path,
-                    use_conda_store_env=use_conda_store_env,
-                )
-                main = Container(
+                Step(
                     name="main",
-                    command=["/bin/sh"],
-                    args=["-c", cmd_args],
-                    env=envs,
+                    template=main(
+                        input_path=input_path,
+                        output_path=output_path,
+                        html_path=html_path,
+                        log_path=log_path,
+                    ),
+                    continue_on=ContinueOn(failed=True),
                 )
-
-                Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
                 token, channel = get_slack_token_channel(parameters)
                 if token is not None and channel is not None:
@@ -365,6 +376,23 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
+        def main(input_path, output_path, html_path, log_path):
+            cmd_args = gen_papermill_command_input(
+                conda_env_name=job.runtime_environment_name,
+                input_path=input_path,
+                output_path=output_path,
+                html_path=html_path,
+                log_path=log_path,
+                use_conda_store_env=use_conda_store_env,
+            )
+            main = Container(
+                name="main",
+                command=["/bin/sh"],
+                args=["-c", cmd_args],
+                env=envs,
+            )
+            return main
+
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -400,21 +428,6 @@ class ArgoExecutor(ExecutionManager):
                 output_path = gen_output_path(input_path, start_time)
                 html_path = gen_html_path(input_path, start_time)
 
-                cmd_args = gen_papermill_command_input(
-                    conda_env_name=job.runtime_environment_name,
-                    input_path=input_path,
-                    output_path=output_path,
-                    html_path=html_path,
-                    log_path=log_path,
-                    use_conda_store_env=use_conda_store_env,
-                )
-                main = Container(
-                    name="main",
-                    command=["/bin/sh"],
-                    args=["-c", cmd_args],
-                    env=envs,
-                )
-
                 create_job_record(
                     name="create-job-id",
                     arguments={
@@ -425,7 +438,16 @@ class ArgoExecutor(ExecutionManager):
                     },
                 )
 
-                Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+                Step(
+                    name="main",
+                    template=main(
+                        input_path=input_path,
+                        output_path=output_path,
+                        html_path=html_path,
+                        log_path=log_path,
+                    ),
+                    continue_on=ContinueOn(failed=True),
+                )
 
                 token, channel = get_slack_token_channel(parameters)
                 if token is not None and channel is not None:
