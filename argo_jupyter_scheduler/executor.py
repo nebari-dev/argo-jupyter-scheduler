@@ -32,6 +32,7 @@ from argo_jupyter_scheduler.utils import (
     gen_log_path,
     gen_output_path,
     gen_papermill_command_input,
+    gen_timestamp,
     gen_workflow_name,
     sanitize_label,
     setup_logger,
@@ -258,7 +259,7 @@ class ArgoExecutor(ExecutionManager):
             main = main(input_path, log_path)
 
             with Steps(name="steps"):
-                start_time = job.create_time
+                start_time = gen_timestamp(job.create_time)
 
                 output_path = gen_output_path(input_path, start_time)
                 html_path = gen_html_path(input_path, start_time)
@@ -450,7 +451,11 @@ class ArgoExecutor(ExecutionManager):
                     },
                 )
 
-                start_time = int(create_job_step.result)
+                # This value is actually {{steps.create-job-id.outputs.result}}.
+                # It will be replaced later when YAML is processed, which is why
+                # the path functions below need to accept a string and not an
+                # int for start_time.
+                start_time = create_job_step.result
 
                 output_path = gen_output_path(input_path, start_time)
                 html_path = gen_html_path(input_path, start_time)
@@ -661,6 +666,8 @@ def create_job_record(
     from jupyter_scheduler.orm import Job, create_session
     from jupyter_scheduler.utils import get_utc_timestamp
 
+    from argo_jupyter_scheduler.utils import gen_timestamp
+
     model = CreateJob(**model)
 
     db_session = create_session(db_url)
@@ -681,7 +688,7 @@ def create_job_record(
         job.job_definition_id = job_definition_id
         job.status = Status.IN_PROGRESS
         start_time = get_utc_timestamp()
-        print(start_time)  # noqa: T201
+        print(gen_timestamp(start_time))  # noqa: T201
         job.start_time = start_time
 
         session.add(job)
