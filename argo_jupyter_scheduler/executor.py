@@ -1,15 +1,7 @@
 import os
 from typing import Dict, Union
 
-from hera.workflows import (
-    Container,
-    CronWorkflow,
-    Env,
-    Parameter,
-    Steps,
-    Workflow,
-    script,
-)
+from hera.workflows import Container, CronWorkflow, Env, Steps, Workflow, script
 from hera.workflows.models import ContinueOn, TTLStrategy, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
@@ -220,9 +212,22 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        def main(input_path, log_path):
-            output_path = "{{inputs.parameters.output_path}}"
-            html_path = "{{inputs.parameters.html_path}}"
+        def main(input_path, log_path, db_url, job_definition_id, start_time=None):
+            if start_time is None:
+                db_session = create_session(db_url)
+                with db_session() as session:
+                    job = (
+                        session.query(Job)
+                        .filter(Job.job_definition_id == job_definition_id)
+                        .order_by(Job.id.desc())
+                        .first()
+                    )
+                    start_time = job.start_time
+
+            start_time = gen_timestamp(start_time)
+
+            output_path = gen_output_path(input_path, start_time)
+            html_path = gen_html_path(input_path, start_time)
 
             cmd_args = gen_papermill_command_input(
                 conda_env_name=job.runtime_environment_name,
@@ -234,7 +239,6 @@ class ArgoExecutor(ExecutionManager):
             )
             main = Container(
                 name="main",
-                inputs=[Parameter(name="output_path"), Parameter(name="html_path")],
                 command=["/bin/sh"],
                 args=["-c", cmd_args],
                 env=envs,
@@ -256,38 +260,35 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as w:
-            main = main(input_path, log_path)
+            main = main(
+                input_path,
+                log_path,
+                None,
+                None,
+                start_time=job.create_time,
+            )
 
             with Steps(name="steps"):
-                start_time = gen_timestamp(job.create_time)
-
-                output_path = gen_output_path(input_path, start_time)
-                html_path = gen_html_path(input_path, start_time)
-
                 main(
                     name="main",
-                    arguments=[
-                        Parameter(name="output_path", value=output_path),
-                        Parameter(name="html_path", value=html_path),
-                    ],
                     continue_on=ContinueOn(failed=True),
                 )
 
-                token, channel = get_slack_token_channel(parameters)
-                if token is not None and channel is not None:
-                    send_to_slack(
-                        name="send-to-slack",
-                        arguments={
-                            "token": token,
-                            "channel": channel,
-                            "file_path": html_path,
-                            "log_path": log_path,
-                        },
-                        when=successful,
-                        continue_on=ContinueOn(failed=True),
-                    )
-                    failure += " || {{steps.send-to-slack.status}} == Failed"
-                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
+                # token, channel = get_slack_token_channel(parameters)
+                # if token is not None and channel is not None:
+                #     send_to_slack(
+                #         name="send-to-slack",
+                #         arguments={
+                #             "token": token,
+                #             "channel": channel,
+                #             "file_path": html_path,
+                #             "log_path": log_path,
+                #         },
+                #         when=successful,
+                #         continue_on=ContinueOn(failed=True),
+                #     )
+                #     failure += " || {{steps.send-to-slack.status}} == Failed"
+                #     successful += " && {{steps.send-to-slack.status}} == Succeeded"
 
                 update_job_status_failure(
                     name="failure",
@@ -389,9 +390,22 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        def main(input_path, log_path):
-            output_path = "{{inputs.parameters.output_path}}"
-            html_path = "{{inputs.parameters.html_path}}"
+        def main(input_path, log_path, db_url, job_definition_id, start_time=None):
+            if start_time is None:
+                db_session = create_session(db_url)
+                with db_session() as session:
+                    job = (
+                        session.query(Job)
+                        .filter(Job.job_definition_id == job_definition_id)
+                        .order_by(Job.id.desc())
+                        .first()
+                    )
+                    start_time = job.start_time
+
+            start_time = gen_timestamp(start_time)
+
+            output_path = gen_output_path(input_path, start_time)
+            html_path = gen_html_path(input_path, start_time)
 
             cmd_args = gen_papermill_command_input(
                 conda_env_name=job.runtime_environment_name,
@@ -403,7 +417,6 @@ class ArgoExecutor(ExecutionManager):
             )
             main = Container(
                 name="main",
-                inputs=[Parameter(name="output_path"), Parameter(name="html_path")],
                 command=["/bin/sh"],
                 args=["-c", cmd_args],
                 env=envs,
@@ -439,10 +452,10 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as cwf:
-            main = main(input_path, log_path)
+            main = main(input_path, log_path, db_url, job_definition_id)
 
             with Steps(name="steps"):
-                create_job_step = create_job_record(
+                create_job_record(
                     name="create-job-id",
                     arguments={
                         "model": model,
@@ -451,39 +464,26 @@ class ArgoExecutor(ExecutionManager):
                     },
                 )
 
-                # This value is actually {{steps.create-job-id.outputs.result}}.
-                # It will be replaced later when YAML is processed, which is why
-                # the path functions below need to accept a string and not an
-                # int for start_time.
-                start_time = create_job_step.result
-
-                output_path = gen_output_path(input_path, start_time)
-                html_path = gen_html_path(input_path, start_time)
-
                 main(
                     name="main",
-                    arguments=[
-                        Parameter(name="output_path", value=output_path),
-                        Parameter(name="html_path", value=html_path),
-                    ],
                     continue_on=ContinueOn(failed=True),
                 )
 
-                token, channel = get_slack_token_channel(parameters)
-                if token is not None and channel is not None:
-                    send_to_slack(
-                        name="send-to-slack",
-                        arguments={
-                            "token": token,
-                            "channel": channel,
-                            "file_path": html_path,
-                            "log_path": log_path,
-                        },
-                        when=successful,
-                        continue_on=ContinueOn(failed=True),
-                    )
-                    failure += " || {{steps.send-to-slack.status}} == Failed"
-                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
+                # token, channel = get_slack_token_channel(parameters)
+                # if token is not None and channel is not None:
+                #     send_to_slack(
+                #         name="send-to-slack",
+                #         arguments={
+                #             "token": token,
+                #             "channel": channel,
+                #             "file_path": html_path,
+                #             "log_path": log_path,
+                #         },
+                #         when=successful,
+                #         continue_on=ContinueOn(failed=True),
+                #     )
+                #     failure += " || {{steps.send-to-slack.status}} == Failed"
+                #     successful += " && {{steps.send-to-slack.status}} == Succeeded"
 
                 update_job_status_failure(
                     name="failure",
@@ -666,8 +666,6 @@ def create_job_record(
     from jupyter_scheduler.orm import Job, create_session
     from jupyter_scheduler.utils import get_utc_timestamp
 
-    from argo_jupyter_scheduler.utils import gen_timestamp
-
     model = CreateJob(**model)
 
     db_session = create_session(db_url)
@@ -688,7 +686,6 @@ def create_job_record(
         job.job_definition_id = job_definition_id
         job.status = Status.IN_PROGRESS
         start_time = get_utc_timestamp()
-        print(gen_timestamp(start_time))  # noqa: T201
         job.start_time = start_time
 
         session.add(job)
