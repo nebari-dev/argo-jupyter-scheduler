@@ -243,20 +243,22 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as w:
+            start_time = job.create_time
+
+            output_path = gen_output_path(input_path, start_time)
+            html_path = gen_html_path(input_path, start_time)
+
+            main = main(
+                input_path=input_path,
+                output_path=output_path,
+                html_path=html_path,
+                log_path=log_path,
+            )
+
             with Steps(name="steps"):
-                start_time = job.create_time
-
-                output_path = gen_output_path(input_path, start_time)
-                html_path = gen_html_path(input_path, start_time)
-
                 Step(
                     name="main",
-                    template=main(
-                        input_path=input_path,
-                        output_path=output_path,
-                        html_path=html_path,
-                        log_path=log_path,
-                    ),
+                    template=main,
                     continue_on=ContinueOn(failed=True),
                 )
 
@@ -422,12 +424,19 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as cwf:
+            start_time = get_utc_timestamp()
+
+            output_path = gen_output_path(input_path, start_time)
+            html_path = gen_html_path(input_path, start_time)
+
+            main = main(
+                input_path=input_path,
+                output_path=output_path,
+                html_path=html_path,
+                log_path=log_path,
+            )
+
             with Steps(name="steps"):
-                start_time = get_utc_timestamp()
-
-                output_path = gen_output_path(input_path, start_time)
-                html_path = gen_html_path(input_path, start_time)
-
                 create_job_record(
                     name="create-job-id",
                     arguments={
@@ -440,12 +449,7 @@ class ArgoExecutor(ExecutionManager):
 
                 Step(
                     name="main",
-                    template=main(
-                        input_path=input_path,
-                        output_path=output_path,
-                        html_path=html_path,
-                        log_path=log_path,
-                    ),
+                    template=main,
                     continue_on=ContinueOn(failed=True),
                 )
 
