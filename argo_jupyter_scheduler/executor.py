@@ -20,7 +20,9 @@ from argo_jupyter_scheduler.utils import (
     add_file_logger,
     authenticate,
     gen_cron_workflow_name,
+    gen_html_path,
     gen_log_path,
+    gen_output_path,
     gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
@@ -184,9 +186,7 @@ class ArgoExecutor(ExecutionManager):
         use_conda_store_env: bool = True,
     ):
         input_path = staging_paths["input"]
-        output_path = staging_paths["ipynb"]
-        html_path = staging_paths["html"]
-        log_path = str(gen_log_path(input_path))
+        log_path = gen_log_path(input_path)
 
         # Configure logging to file first
         add_file_logger(logger, log_path)
@@ -204,26 +204,12 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        cmd_args = gen_papermill_command_input(
-            conda_env_name=job.runtime_environment_name,
-            input_path=input_path,
-            output_path=output_path,
-            html_path=html_path,
-            use_conda_store_env=use_conda_store_env,
-        )
         envs = []
         if parameters:
             for key, value in parameters.items():
                 envs.append(Env(name=key, value=value))
         else:
             parameters = {}
-
-        main = Container(
-            name="main",
-            command=["/bin/sh"],
-            args=["-c", cmd_args],
-            env=envs,
-        )
 
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
@@ -241,6 +227,26 @@ class ArgoExecutor(ExecutionManager):
             ttl_strategy=ttl_strategy,
         ) as w:
             with Steps(name="steps"):
+                start_time = job.create_time
+
+                output_path = gen_output_path(input_path, start_time)
+                html_path = gen_html_path(input_path, start_time)
+
+                cmd_args = gen_papermill_command_input(
+                    conda_env_name=job.runtime_environment_name,
+                    input_path=input_path,
+                    output_path=output_path,
+                    html_path=html_path,
+                    log_path=log_path,
+                    use_conda_store_env=use_conda_store_env,
+                )
+                main = Container(
+                    name="main",
+                    command=["/bin/sh"],
+                    args=["-c", cmd_args],
+                    env=envs,
+                )
+
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
                 token, channel = get_slack_token_channel(parameters)
@@ -334,9 +340,7 @@ class ArgoExecutor(ExecutionManager):
         use_conda_store_env: bool = True,
     ):
         input_path = staging_paths["input"]
-        output_path = staging_paths["ipynb"]
-        html_path = staging_paths["html"]
-        log_path = str(gen_log_path(input_path))
+        log_path = gen_log_path(input_path)
 
         # Configure logging to file first
         add_file_logger(logger, log_path)
@@ -354,13 +358,6 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        cmd_args = gen_papermill_command_input(
-            conda_env_name=job.runtime_environment_name,
-            input_path=input_path,
-            output_path=output_path,
-            html_path=html_path,
-            use_conda_store_env=use_conda_store_env,
-        )
         envs = []
         if parameters:
             for key, value in parameters.items():
@@ -368,12 +365,6 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        main = Container(
-            name="main",
-            command=["/bin/sh"],
-            args=["-c", cmd_args],
-            env=envs,
-        )
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -404,12 +395,33 @@ class ArgoExecutor(ExecutionManager):
             ttl_strategy=ttl_strategy,
         ) as cwf:
             with Steps(name="steps"):
+                start_time = get_utc_timestamp()
+
+                output_path = gen_output_path(input_path, start_time)
+                html_path = gen_html_path(input_path, start_time)
+
+                cmd_args = gen_papermill_command_input(
+                    conda_env_name=job.runtime_environment_name,
+                    input_path=input_path,
+                    output_path=output_path,
+                    html_path=html_path,
+                    log_path=log_path,
+                    use_conda_store_env=use_conda_store_env,
+                )
+                main = Container(
+                    name="main",
+                    command=["/bin/sh"],
+                    args=["-c", cmd_args],
+                    env=envs,
+                )
+
                 create_job_record(
                     name="create-job-id",
                     arguments={
                         "model": model,
                         "db_url": db_url,
                         "job_definition_id": job_definition_id,
+                        "start_time": start_time,
                     },
                 )
 
@@ -606,11 +618,11 @@ def create_job_record(
     model,
     db_url,
     job_definition_id,
+    start_time,
 ):
     from jupyter_scheduler.exceptions import IdempotencyTokenError
     from jupyter_scheduler.models import CreateJob, Status
     from jupyter_scheduler.orm import Job, create_session
-    from jupyter_scheduler.utils import get_utc_timestamp
 
     model = CreateJob(**model)
 
@@ -631,7 +643,7 @@ def create_job_record(
         job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
         job.job_definition_id = job_definition_id
         job.status = Status.IN_PROGRESS
-        job.start_time = get_utc_timestamp()
+        job.start_time = start_time
 
         session.add(job)
         session.commit()

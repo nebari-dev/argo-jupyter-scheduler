@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 import urllib3
 from hera.shared import global_config
+from jupyter_scheduler.utils import create_output_filename
 from urllib3.exceptions import ConnectionError
 
 CONDA_STORE_TOKEN = "CONDA_STORE_TOKEN"
@@ -79,9 +80,17 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"job-def-{job_definition_id}"
 
 
+def gen_output_path(input_path: str, start_time: int):
+    return create_output_filename(input_path, start_time, "ipynb")
+
+
+def gen_html_path(input_path: str, start_time: int):
+    return create_output_filename(input_path, start_time, "html")
+
+
 def gen_log_path(input_path: str):
     p = Path(input_path)
-    return p.parent / "logs.txt"
+    return str(p.parent / "logs.txt")
 
 
 def send_request(api_v1_endpoint):
@@ -162,12 +171,12 @@ def gen_papermill_command_input(
     input_path: str,
     output_path: str,
     html_path: str,
+    log_path: str,
     use_conda_store_env: bool = True,
 ):
     # TODO: allow overrides
     kernel_name = "python3"
 
-    log_path = gen_log_path(input_path)
     conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
 
     logger.info(f"conda_env_path: {conda_env_path}")
