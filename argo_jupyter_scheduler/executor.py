@@ -219,7 +219,7 @@ class ArgoExecutor(ExecutionManager):
                     q = (
                         session.query(Job)
                         .filter(Job.job_definition_id == job_definition_id)
-                        .order_by(Job.id.desc())
+                        .order_by(Job.start_time.desc())
                         .first()
                     )
                     start_time = q.start_time
@@ -397,7 +397,7 @@ class ArgoExecutor(ExecutionManager):
                     q = (
                         session.query(Job)
                         .filter(Job.job_definition_id == job_definition_id)
-                        .order_by(Job.id.desc())
+                        .order_by(Job.start_time.desc())
                         .first()
                     )
                     start_time = q.start_time
