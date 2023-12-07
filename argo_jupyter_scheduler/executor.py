@@ -1,7 +1,16 @@
 import os
 from typing import Dict, Union
 
-from hera.workflows import Container, CronWorkflow, Env, Step, Steps, Workflow, script
+from hera.workflows import (
+    Container,
+    CronWorkflow,
+    Env,
+    Parameter,
+    Step,
+    Steps,
+    Workflow,
+    script,
+)
 from hera.workflows.models import ContinueOn, TTLStrategy, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
@@ -211,7 +220,10 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        def main(input_path, output_path, html_path, log_path):
+        def main(input_path, log_path):
+            output_path = "{{inputs.parameters.output_path}}"
+            html_path = "{{inputs.parameters.html_path}}"
+
             cmd_args = gen_papermill_command_input(
                 conda_env_name=job.runtime_environment_name,
                 input_path=input_path,
@@ -243,6 +255,8 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as w:
+            main = main(input_path, log_path)
+
             with Steps(name="steps"):
                 start_time = job.create_time
 
@@ -251,12 +265,11 @@ class ArgoExecutor(ExecutionManager):
 
                 Step(
                     name="main",
-                    template=main(
-                        input_path=input_path,
-                        output_path=output_path,
-                        html_path=html_path,
-                        log_path=log_path,
-                    ),
+                    template=main,
+                    arguments=[
+                        Parameter(name="output_path", value=output_path),
+                        Parameter(name="html_path", value=html_path),
+                    ],
                     continue_on=ContinueOn(failed=True),
                 )
 
@@ -376,7 +389,10 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        def main(input_path, output_path, html_path, log_path):
+        def main(input_path, log_path):
+            output_path = "{{inputs.parameters.output_path}}"
+            html_path = "{{inputs.parameters.html_path}}"
+
             cmd_args = gen_papermill_command_input(
                 conda_env_name=job.runtime_environment_name,
                 input_path=input_path,
@@ -422,6 +438,8 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as cwf:
+            main = main(input_path, log_path)
+
             with Steps(name="steps"):
                 start_time = get_utc_timestamp()
 
@@ -440,12 +458,11 @@ class ArgoExecutor(ExecutionManager):
 
                 Step(
                     name="main",
-                    template=main(
-                        input_path=input_path,
-                        output_path=output_path,
-                        html_path=html_path,
-                        log_path=log_path,
-                    ),
+                    template=main,
+                    arguments=[
+                        Parameter(name="output_path", value=output_path),
+                        Parameter(name="html_path", value=html_path),
+                    ],
                     continue_on=ContinueOn(failed=True),
                 )
 
