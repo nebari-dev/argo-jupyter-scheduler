@@ -73,16 +73,6 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"job-def-{job_definition_id}"
 
 
-def gen_output_path(input_path: str):
-    p = Path(input_path)
-    return p.parent / "output.ipynb"
-
-
-def gen_html_path(input_path: str):
-    p = Path(input_path)
-    return p.parent / "output.html"
-
-
 def gen_log_path(input_path: str):
     p = Path(input_path)
     return p.parent / "logs.txt"
@@ -162,15 +152,17 @@ def gen_conda_env_path(conda_env_name: str, use_conda_store_env: bool = True):
 
 
 def gen_papermill_command_input(
-    conda_env_name: str, input_path: str, use_conda_store_env: bool = True
+    conda_env_name: str,
+    input_path: str,
+    output_path: str,
+    html_path: str,
+    use_conda_store_env: bool = True,
 ):
     # TODO: allow overrides
     kernel_name = "python3"
 
-    output_path = gen_output_path(input_path)
     log_path = gen_log_path(input_path)
     conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
-    html_path = gen_html_path(input_path)
 
     logger.info(f"conda_env_path: {conda_env_path}")
     logger.info(f"output_path: {output_path}")

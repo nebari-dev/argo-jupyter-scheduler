@@ -19,7 +19,6 @@ from argo_jupyter_scheduler.utils import (
     WorkflowActionsEnum,
     authenticate,
     gen_cron_workflow_name,
-    gen_html_path,
     gen_log_path,
     gen_papermill_command_input,
     gen_workflow_name,
@@ -196,10 +195,14 @@ class ArgoExecutor(ExecutionManager):
             ),
         }
         input_path = staging_paths["input"]
+        output_path = staging_paths["ipynb"]
+        html_path = staging_paths["html"]
         cmd_args = gen_papermill_command_input(
-            job.runtime_environment_name,
-            input_path,
-            use_conda_store_env,
+            conda_env_name=job.runtime_environment_name,
+            input_path=input_path,
+            output_path=output_path,
+            html_path=html_path,
+            use_conda_store_env=use_conda_store_env,
         )
         envs = []
         if parameters:
@@ -240,7 +243,7 @@ class ArgoExecutor(ExecutionManager):
                         arguments={
                             "token": token,
                             "channel": channel,
-                            "file_path": str(gen_html_path(input_path)),
+                            "file_path": html_path,
                             "log_path": str(gen_log_path(input_path)),
                         },
                         when=successful,
@@ -336,10 +339,14 @@ class ArgoExecutor(ExecutionManager):
             ),
         }
         input_path = staging_paths["input"]
+        output_path = staging_paths["ipynb"]
+        html_path = staging_paths["html"]
         cmd_args = gen_papermill_command_input(
-            job.runtime_environment_name,
-            input_path,
-            use_conda_store_env,
+            conda_env_name=job.runtime_environment_name,
+            input_path=input_path,
+            output_path=output_path,
+            html_path=html_path,
+            use_conda_store_env=use_conda_store_env,
         )
         envs = []
         if parameters:
@@ -402,7 +409,7 @@ class ArgoExecutor(ExecutionManager):
                         arguments={
                             "token": token,
                             "channel": channel,
-                            "file_path": str(gen_html_path(input_path)),
+                            "file_path": html_path,
                             "log_path": str(gen_log_path(input_path)),
                         },
                         when=successful,
