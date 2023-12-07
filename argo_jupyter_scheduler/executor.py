@@ -6,7 +6,6 @@ from hera.workflows import (
     CronWorkflow,
     Env,
     Parameter,
-    Step,
     Steps,
     Workflow,
     script,
@@ -263,9 +262,8 @@ class ArgoExecutor(ExecutionManager):
                 output_path = gen_output_path(input_path, start_time)
                 html_path = gen_html_path(input_path, start_time)
 
-                Step(
+                main(
                     name="main",
-                    template=main,
                     arguments=[
                         Parameter(name="output_path", value=output_path),
                         Parameter(name="html_path", value=html_path),
@@ -456,9 +454,8 @@ class ArgoExecutor(ExecutionManager):
                     },
                 )
 
-                Step(
+                main(
                     name="main",
-                    template=main,
                     arguments=[
                         Parameter(name="output_path", value=output_path),
                         Parameter(name="html_path", value=html_path),
