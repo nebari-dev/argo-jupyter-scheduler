@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Union
 
-from hera.workflows import CronWorkflow, Steps, Workflow, script
+from hera.workflows import Container, CronWorkflow, Env, Step, Steps, Workflow, script
 from hera.workflows.models import ContinueOn, TTLStrategy, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
@@ -23,6 +23,7 @@ from argo_jupyter_scheduler.utils import (
     gen_html_path,
     gen_log_path,
     gen_output_path,
+    gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
     setup_logger,
@@ -203,8 +204,29 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
+        envs = []
+        if parameters:
+            for key, value in parameters.items():
+                envs.append(Env(name=key, value=value))
+        else:
+            parameters = {}
 
-        parameters = {} if parameters is None else parameters
+        def main(input_path, output_path, html_path, log_path):
+            cmd_args = gen_papermill_command_input(
+                conda_env_name=job.runtime_environment_name,
+                input_path=input_path,
+                output_path=output_path,
+                html_path=html_path,
+                log_path=log_path,
+                use_conda_store_env=use_conda_store_env,
+            )
+            main = Container(
+                name="main",
+                command=["/bin/sh"],
+                args=["-c", cmd_args],
+                env=envs,
+            )
+            return main
 
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
@@ -227,17 +249,14 @@ class ArgoExecutor(ExecutionManager):
                 output_path = gen_output_path(input_path, start_time)
                 html_path = gen_html_path(input_path, start_time)
 
-                main(
+                Step(
                     name="main",
-                    arguments={
-                        "conda_env_name": job.runtime_environment_name,
-                        "input_path": input_path,
-                        "output_path": output_path,
-                        "html_path": html_path,
-                        "log_path": log_path,
-                        "use_conda_store_env": use_conda_store_env,
-                        "parameters": parameters,
-                    },
+                    template=main(
+                        input_path=input_path,
+                        output_path=output_path,
+                        html_path=html_path,
+                        log_path=log_path,
+                    ),
                     continue_on=ContinueOn(failed=True),
                 )
 
@@ -350,8 +369,29 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
+        envs = []
+        if parameters:
+            for key, value in parameters.items():
+                envs.append(Env(name=key, value=value))
+        else:
+            parameters = {}
 
-        parameters = {} if parameters is None else parameters
+        def main(input_path, output_path, html_path, log_path):
+            cmd_args = gen_papermill_command_input(
+                conda_env_name=job.runtime_environment_name,
+                input_path=input_path,
+                output_path=output_path,
+                html_path=html_path,
+                log_path=log_path,
+                use_conda_store_env=use_conda_store_env,
+            )
+            main = Container(
+                name="main",
+                command=["/bin/sh"],
+                args=["-c", cmd_args],
+                env=envs,
+            )
+            return main
 
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
@@ -398,17 +438,14 @@ class ArgoExecutor(ExecutionManager):
                     },
                 )
 
-                main(
+                Step(
                     name="main",
-                    arguments={
-                        "conda_env_name": job.runtime_environment_name,
-                        "input_path": input_path,
-                        "output_path": output_path,
-                        "html_path": html_path,
-                        "log_path": log_path,
-                        "use_conda_store_env": use_conda_store_env,
-                        "parameters": parameters,
-                    },
+                    template=main(
+                        input_path=input_path,
+                        output_path=output_path,
+                        html_path=html_path,
+                        log_path=log_path,
+                    ),
                     continue_on=ContinueOn(failed=True),
                 )
 
@@ -638,82 +675,6 @@ def get_slack_token_channel(parameters):
     token = parameters.get("SLACK_TOKEN")
     channel = parameters.get("SLACK_CHANNEL")
     return token, channel
-
-
-@script()
-def main(
-    conda_env_name,
-    input_path,
-    output_path,
-    html_path,
-    log_path,
-    use_conda_store_env,
-    parameters,
-):
-    import subprocess
-
-    from argo_jupyter_scheduler.utils import gen_conda_env_path
-
-    try:
-        # TODO: allow overrides
-        kernel_name = "python3"
-
-        logger = setup_logger("main")
-        add_file_logger(logger, log_path)
-
-        conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
-
-        logger.info(f"conda_env_path: {conda_env_path}")
-        logger.info(f"output_path: {output_path}")
-        logger.info(f"log_path: {log_path}")
-        logger.info(f"html_path: {html_path}")
-
-        papermill = [
-            "conda",
-            "run",
-            "-p",
-            f"{conda_env_path}",
-            "papermill",
-            "-k",
-            f"{kernel_name}",
-            f"{input_path}",
-            f"{output_path}",
-        ]
-        jupyter = [
-            "jupyter",
-            "nbconvert",
-            "--to",
-            "html",
-            f"{output_path}",
-            "--output",
-            f"{html_path}",
-        ]
-
-        with open(log_path, "a") as f:
-            logger.info(f"Running {' '.join(papermill)}")
-            subprocess.run(
-                papermill,  # noqa: S603
-                check=True,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                env=parameters,
-            )
-
-            logger.info(f"Running {' '.join(jupyter)}")
-            subprocess.run(
-                jupyter,  # noqa: S603
-                check=True,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                env=parameters,
-            )
-
-        logger.info("Successfully ran main")
-
-    except Exception as e:
-        msg = "Failed to run main"
-        logger.info(msg)
-        raise Exception(msg) from e
 
 
 @script()
