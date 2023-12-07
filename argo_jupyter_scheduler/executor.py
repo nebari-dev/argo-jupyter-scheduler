@@ -186,6 +186,7 @@ class ArgoExecutor(ExecutionManager):
         authenticate()
 
         logger.info("creating workflow...")
+        logger.info(f"staging paths: {staging_paths}")
 
         labels = {
             "jupyterflow-override": "true",
@@ -324,6 +325,8 @@ class ArgoExecutor(ExecutionManager):
     ):
         # Argo-Workflow verbage vs Jupyter-Scheduler verbage
         suspend = not active
+
+        logger.info(f"staging paths: {staging_paths}")
 
         labels = {
             "jupyterflow-override": "true",
