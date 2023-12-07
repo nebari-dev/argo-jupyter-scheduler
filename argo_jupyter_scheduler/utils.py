@@ -166,30 +166,6 @@ def gen_conda_env_path(conda_env_name: str, use_conda_store_env: bool = True):
     return CONDA_ENV_LOCATION.format(conda_env_name=DEFAULT_ENV)
 
 
-def gen_papermill_command_input(
-    conda_env_name: str,
-    input_path: str,
-    output_path: str,
-    html_path: str,
-    log_path: str,
-    use_conda_store_env: bool = True,
-):
-    # TODO: allow overrides
-    kernel_name = "python3"
-
-    conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
-
-    logger.info(f"conda_env_path: {conda_env_path}")
-    logger.info(f"output_path: {output_path}")
-    logger.info(f"log_path: {log_path}")
-    logger.info(f"html_path: {html_path}")
-
-    papermill = f"papermill -k {kernel_name} {input_path} {output_path}"
-    jupyter = f"jupyter nbconvert --to html {output_path} --output {html_path}"
-
-    return f'conda run -p {conda_env_path} /bin/sh -c "{{ {papermill} && {jupyter} ; }} >> {log_path} 2>&1"'
-
-
 def sanitize_label(s: str):
     s = s.lower()
     pattern = r"[^A-Za-z0-9]"
