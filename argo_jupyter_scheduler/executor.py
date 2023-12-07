@@ -24,7 +24,6 @@ from argo_jupyter_scheduler.utils import (
     gen_log_path,
     gen_output_path,
     gen_papermill_command_input,
-    gen_timestamp,
     gen_workflow_name,
     sanitize_label,
     setup_logger,
@@ -212,19 +211,8 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        def main(input_path, log_path, db_url, job_definition_id, start_time=None):
-            if start_time is None:
-                db_session = create_session(db_url)
-                with db_session() as session:
-                    q = (
-                        session.query(Job)
-                        .filter(Job.job_definition_id == job_definition_id)
-                        .order_by(Job.start_time.desc())
-                        .first()
-                    )
-                    start_time = q.start_time
-
-            start_time = gen_timestamp(start_time)
+        def main(input_path, log_path):
+            start_time = "UNKNOWN"
 
             output_path = gen_output_path(input_path, start_time)
             html_path = gen_html_path(input_path, start_time)
@@ -260,19 +248,27 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as w:
-            main = main(
-                input_path,
-                log_path,
-                None,
-                None,
-                start_time=job.create_time,
-            )
+            main = main(input_path, log_path)
 
             with Steps(name="steps"):
                 main(
                     name="main",
                     continue_on=ContinueOn(failed=True),
                 )
+
+                rename_files(
+                    name="rename-files",
+                    arguments={
+                        "db_url": None,
+                        "job_definition_id": None,
+                        "input_path": input_path,
+                        "start_time": job.create_time,
+                    },
+                    when=successful,
+                )
+
+                failure += " || {{steps.rename-files.status}} == Failed"
+                successful += " && {{steps.rename-files.status}} == Succeeded"
 
                 # token, channel = get_slack_token_channel(parameters)
                 # if token is not None and channel is not None:
@@ -390,19 +386,8 @@ class ArgoExecutor(ExecutionManager):
         else:
             parameters = {}
 
-        def main(input_path, log_path, db_url, job_definition_id, start_time=None):
-            if start_time is None:
-                db_session = create_session(db_url)
-                with db_session() as session:
-                    q = (
-                        session.query(Job)
-                        .filter(Job.job_definition_id == job_definition_id)
-                        .order_by(Job.start_time.desc())
-                        .first()
-                    )
-                    start_time = q.start_time
-
-            start_time = gen_timestamp(start_time)
+        def main(input_path, log_path):
+            start_time = "UNKNOWN"
 
             output_path = gen_output_path(input_path, start_time)
             html_path = gen_html_path(input_path, start_time)
@@ -452,7 +437,7 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as cwf:
-            main = main(input_path, log_path, db_url, job_definition_id)
+            main = main(input_path, log_path)
 
             with Steps(name="steps"):
                 create_job_record(
@@ -468,6 +453,20 @@ class ArgoExecutor(ExecutionManager):
                     name="main",
                     continue_on=ContinueOn(failed=True),
                 )
+
+                rename_files(
+                    name="rename-files",
+                    arguments={
+                        "db_url": db_url,
+                        "job_definition_id": job_definition_id,
+                        "input_path": input_path,
+                        "start_time": None,
+                    },
+                    when=successful,
+                )
+
+                failure += " || {{steps.rename-files.status}} == Failed"
+                successful += " && {{steps.rename-files.status}} == Succeeded"
 
                 # token, channel = get_slack_token_channel(parameters)
                 # if token is not None and channel is not None:
@@ -690,6 +689,35 @@ def create_job_record(
 
         session.add(job)
         session.commit()
+
+
+@script()
+def rename_files(db_url, job_definition_id, input_path, start_time):
+    import os
+
+    from argo_jupyter_scheduler.utils import gen_timestamp
+
+    if start_time is None:
+        db_session = create_session(db_url)
+        with db_session() as session:
+            q = (
+                session.query(Job)
+                .filter(Job.job_definition_id == job_definition_id)
+                .order_by(Job.start_time.desc())
+                .first()
+            )
+            start_time = q.start_time
+
+    start_time = gen_timestamp(start_time)
+
+    old_output_path = gen_output_path(input_path, "UNKNOWN")
+    old_html_path = gen_html_path(input_path, "UNKNOWN")
+
+    new_output_path = gen_output_path(input_path, start_time)
+    new_html_path = gen_html_path(input_path, start_time)
+
+    os.rename(old_output_path, new_output_path)
+    os.rename(old_html_path, new_html_path)
 
 
 def get_slack_token_channel(parameters):
