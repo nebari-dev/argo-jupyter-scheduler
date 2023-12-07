@@ -17,6 +17,7 @@ from jupyter_scheduler.utils import get_utc_timestamp
 
 from argo_jupyter_scheduler.utils import (
     WorkflowActionsEnum,
+    add_file_logger,
     authenticate,
     gen_cron_workflow_name,
     gen_log_path,
@@ -182,6 +183,14 @@ class ArgoExecutor(ExecutionManager):
         db_url: str,
         use_conda_store_env: bool = True,
     ):
+        input_path = staging_paths["input"]
+        output_path = staging_paths["ipynb"]
+        html_path = staging_paths["html"]
+        log_path = str(gen_log_path(input_path))
+
+        # Configure logging to file first
+        add_file_logger(logger, log_path)
+
         authenticate()
 
         logger.info("creating workflow...")
@@ -195,9 +204,6 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        input_path = staging_paths["input"]
-        output_path = staging_paths["ipynb"]
-        html_path = staging_paths["html"]
         cmd_args = gen_papermill_command_input(
             conda_env_name=job.runtime_environment_name,
             input_path=input_path,
@@ -245,7 +251,7 @@ class ArgoExecutor(ExecutionManager):
                             "token": token,
                             "channel": channel,
                             "file_path": html_path,
-                            "log_path": str(gen_log_path(input_path)),
+                            "log_path": log_path,
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -327,6 +333,14 @@ class ArgoExecutor(ExecutionManager):
         active: bool = True,
         use_conda_store_env: bool = True,
     ):
+        input_path = staging_paths["input"]
+        output_path = staging_paths["ipynb"]
+        html_path = staging_paths["html"]
+        log_path = str(gen_log_path(input_path))
+
+        # Configure logging to file first
+        add_file_logger(logger, log_path)
+
         # Argo-Workflow verbage vs Jupyter-Scheduler verbage
         suspend = not active
 
@@ -340,9 +354,6 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        input_path = staging_paths["input"]
-        output_path = staging_paths["ipynb"]
-        html_path = staging_paths["html"]
         cmd_args = gen_papermill_command_input(
             conda_env_name=job.runtime_environment_name,
             input_path=input_path,
@@ -412,7 +423,7 @@ class ArgoExecutor(ExecutionManager):
                             "token": token,
                             "channel": channel,
                             "file_path": html_path,
-                            "log_path": str(gen_log_path(input_path)),
+                            "log_path": log_path,
                         },
                         when=successful,
                         continue_on=ContinueOn(failed=True),
@@ -635,17 +646,14 @@ def get_slack_token_channel(parameters):
 @script()
 def send_to_slack(token, channel, file_path, log_path):
     import json
-    import logging
 
     import requests
 
-    from argo_jupyter_scheduler.utils import setup_logger
+    from argo_jupyter_scheduler.utils import add_file_logger, setup_logger
 
     try:
         logger = setup_logger("send_to_slack")
-        logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler(log_path)
-        logger.addHandler(fh)
+        add_file_logger(logger, log_path)
 
         url = "https://slack.com/api/files.upload"
 
@@ -680,6 +688,3 @@ def send_to_slack(token, channel, file_path, log_path):
         msg = "Failed to send to Slack"
         logger.info(msg)
         raise Exception(msg) from e
-
-    finally:
-        logger.removeHandler(fh)

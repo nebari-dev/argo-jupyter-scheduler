@@ -39,6 +39,12 @@ def setup_logger(name):
     return logger
 
 
+def add_file_logger(logger, log_path):
+    logger.setLevel(logging.DEBUG)
+    fh = logging.FileHandler(log_path)
+    logger.addHandler(fh)
+
+
 logger = setup_logger(__name__)
 
 
