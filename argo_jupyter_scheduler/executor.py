@@ -185,6 +185,7 @@ class ArgoExecutor(ExecutionManager):
         authenticate()
 
         logger.info("creating workflow...")
+        logger.info(f"create time: {job.create_time}")
         logger.info(f"staging paths: {staging_paths}")
 
         labels = {
@@ -329,6 +330,7 @@ class ArgoExecutor(ExecutionManager):
         # Argo-Workflow verbage vs Jupyter-Scheduler verbage
         suspend = not active
 
+        logger.info(f"create time: {job.create_time}")
         logger.info(f"staging paths: {staging_paths}")
 
         labels = {
