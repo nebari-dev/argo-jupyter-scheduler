@@ -715,9 +715,17 @@ def rename_files(db_url, job_definition_id, input_path, start_time):
                 .order_by(Job.start_time.desc())
                 .first()
             )
-            print("YYYYYY", q.job_id)
+            print("YYYYYY", q.job_id)  # this one needs to be a new symlink
             print("YYYYYY", job_definition_id)
             print("YYYYYY", q.url)
+
+            # The current job id doesn't match the id in the staging area.
+            # Creates a symlink to make files downloadable via the web UI.
+            basedir = os.path.dirname(os.path.dirname(input_path))
+            old_dir = os.path.join(basedir, job_definition_id)
+            new_dir = os.path.join(basedir, q.job_id)
+            os.symlink(old_dir, new_dir)
+
             start_time = q.start_time
 
     start_time = gen_timestamp(start_time)
