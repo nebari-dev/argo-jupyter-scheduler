@@ -696,6 +696,7 @@ def rename_files(db_url, job_definition_id, input_path, start_time):
     import os
 
     from argo_jupyter_scheduler.utils import gen_timestamp
+    from jupyter_scheduler.orm import Job, create_session
 
     if start_time is None:
         db_session = create_session(db_url)
