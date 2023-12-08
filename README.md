@@ -71,11 +71,11 @@ Slack channel:
 
 Create job:
 
-![Create job Slack](./assets/create-job-slack.png "Create job Slack")
+<img src="./assets/create-job-slack.png" alt="Create job Slack" width="400"/>
 
 Slack output:
 
-![Slack output](./assets/slack-output.png "Slack output")
+<img src="./assets/slack-output.png" alt="Slack output" width="800"/>
 
 ## A deeper dive
 
