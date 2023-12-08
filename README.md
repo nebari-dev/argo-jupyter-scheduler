@@ -10,6 +10,8 @@
 - [argo-jupyter-scheduler](#argo-jupyter-scheduler)
   - [Installation](#installation)
   - [What is it?](#what-is-it)
+  - [Optional features](#optional-features)
+    - [Sending to Slack](#sending-to-slack)
   - [A deeper dive](#a-deeper-dive)
     - [`Job`](#job)
     - [`Job Definition`](#job-definition)
