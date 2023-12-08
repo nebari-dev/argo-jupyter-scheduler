@@ -742,26 +742,29 @@ def send_to_slack(
         setup_logger,
     )
 
-    if start_time is None:
-        db_session = create_session(db_url)
-        with db_session() as session:
-            q = (
-                session.query(Job)
-                .filter(Job.job_definition_id == job_definition_id)
-                .order_by(Job.start_time.desc())
-                .first()
-            )
-
-            start_time = q.start_time
-
-    start_time = gen_timestamp(start_time)
-
-    html_path = gen_html_path(input_path, start_time)
-
     try:
+        # Sets up logging
         logger = setup_logger("send_to_slack")
         add_file_logger(logger, log_path)
 
+        # Gets start_time if not provided to generate file path
+        if start_time is None:
+            db_session = create_session(db_url)
+            with db_session() as session:
+                q = (
+                    session.query(Job)
+                    .filter(Job.job_definition_id == job_definition_id)
+                    .order_by(Job.start_time.desc())
+                    .first()
+                )
+
+                start_time = q.start_time
+
+        start_time = gen_timestamp(start_time)
+
+        html_path = gen_html_path(input_path, start_time)
+
+        # Sends to Slack
         url = "https://slack.com/api/files.upload"
 
         files = {"file": (os.path.basename(html_path), open(html_path, "rb"))}
