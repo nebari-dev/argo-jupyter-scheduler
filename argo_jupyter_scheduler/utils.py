@@ -86,6 +86,20 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"job-def-{job_definition_id}"
 
 
+def gen_default_output_path(input_path: str):
+    # The initial filename before we can get access to the timestamp. Has the
+    # "unknown" suffix to make it visible in the logs and to avoid clashing with
+    # the input filename.
+    return gen_output_path(input_path, "unknown")
+
+
+def gen_default_html_path(input_path: str):
+    # The initial filename before we can get access to the timestamp. Has the
+    # "unknown" suffix to make it visible in the logs and to avoid clashing with
+    # the input filename.
+    return gen_html_path(input_path, "unknown")
+
+
 def gen_output_path(input_path: str, timestamp: str):
     # See create_output_filename in jupyter-scheduler
     basename = os.path.splitext(input_path)[0]

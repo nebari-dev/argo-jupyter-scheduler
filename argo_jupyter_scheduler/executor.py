@@ -20,9 +20,9 @@ from argo_jupyter_scheduler.utils import (
     add_file_logger,
     authenticate,
     gen_cron_workflow_name,
-    gen_html_path,
+    gen_default_html_path,
+    gen_default_output_path,
     gen_log_path,
-    gen_output_path,
     gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
@@ -564,10 +564,8 @@ def main_container(job, use_conda_store_env, input_path, log_path, parameters):
         for key, value in parameters.items():
             envs.append(Env(name=key, value=value))
 
-    start_time = "UNKNOWN"
-
-    output_path = gen_output_path(input_path, start_time)
-    html_path = gen_html_path(input_path, start_time)
+    output_path = gen_default_output_path(input_path)
+    html_path = gen_default_html_path(input_path)
 
     cmd_args = gen_papermill_command_input(
         conda_env_name=job.runtime_environment_name,
@@ -679,6 +677,8 @@ def rename_files(db_url, job_definition_id, input_path, start_time):
     from jupyter_scheduler.orm import Job, create_session
 
     from argo_jupyter_scheduler.utils import (
+        gen_default_html_path,
+        gen_default_output_path,
         gen_html_path,
         gen_output_path,
         gen_timestamp,
@@ -705,8 +705,8 @@ def rename_files(db_url, job_definition_id, input_path, start_time):
 
     start_time = gen_timestamp(start_time)
 
-    old_output_path = gen_output_path(input_path, "UNKNOWN")
-    old_html_path = gen_html_path(input_path, "UNKNOWN")
+    old_output_path = gen_default_output_path(input_path)
+    old_html_path = gen_default_html_path(input_path)
 
     new_output_path = gen_output_path(input_path, start_time)
     new_html_path = gen_html_path(input_path, start_time)
