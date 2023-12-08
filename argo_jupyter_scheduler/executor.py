@@ -665,8 +665,7 @@ def create_job_record(
         job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
         job.job_definition_id = job_definition_id
         job.status = Status.IN_PROGRESS
-        start_time = get_utc_timestamp()
-        job.start_time = start_time
+        job.start_time = get_utc_timestamp()
 
         session.add(job)
         session.commit()
