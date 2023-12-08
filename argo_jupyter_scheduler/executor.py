@@ -235,6 +235,7 @@ class ArgoExecutor(ExecutionManager):
                         "db_url": None,
                         "job_definition_id": None,
                         "input_path": input_path,
+                        "log_path": log_path,
                         "start_time": job.create_time,
                     },
                     continue_on=ContinueOn(failed=True),
@@ -410,6 +411,7 @@ class ArgoExecutor(ExecutionManager):
                         "db_url": db_url,
                         "job_definition_id": job_definition_id,
                         "input_path": input_path,
+                        "log_path": log_path,
                         "start_time": None,
                     },
                     continue_on=ContinueOn(failed=True),
@@ -671,48 +673,64 @@ def create_job_record(
 
 
 @script()
-def rename_files(db_url, job_definition_id, input_path, start_time):
+def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
     import os
 
     from jupyter_scheduler.orm import Job, create_session
 
     from argo_jupyter_scheduler.utils import (
+        add_file_logger,
         gen_default_html_path,
         gen_default_output_path,
         gen_html_path,
         gen_output_path,
         gen_timestamp,
+        setup_logger,
     )
 
-    if start_time is None:
-        db_session = create_session(db_url)
-        with db_session() as session:
-            q = (
-                session.query(Job)
-                .filter(Job.job_definition_id == job_definition_id)
-                .order_by(Job.start_time.desc())
-                .first()
-            )
+    try:
+        # Sets up logging
+        logger = setup_logger("rename_files")
+        add_file_logger(logger, log_path)
 
-            # The current job id doesn't match the id in the staging area.
-            # Creates a symlink to make files downloadable via the web UI.
-            basedir = os.path.dirname(os.path.dirname(input_path))
-            old_dir = os.path.join(basedir, job_definition_id)
-            new_dir = os.path.join(basedir, q.job_id)
-            os.symlink(old_dir, new_dir)
+        # Gets start_time if not provided to generate file paths
+        if start_time is None:
+            db_session = create_session(db_url)
+            with db_session() as session:
+                q = (
+                    session.query(Job)
+                    .filter(Job.job_definition_id == job_definition_id)
+                    .order_by(Job.start_time.desc())
+                    .first()
+                )
 
-            start_time = q.start_time
+                # The current job id doesn't match the id in the staging area.
+                # Creates a symlink to make files downloadable via the web UI.
+                basedir = os.path.dirname(os.path.dirname(input_path))
+                old_dir = os.path.join(basedir, job_definition_id)
+                new_dir = os.path.join(basedir, q.job_id)
+                os.symlink(old_dir, new_dir)
 
-    start_time = gen_timestamp(start_time)
+                start_time = q.start_time
 
-    old_output_path = gen_default_output_path(input_path)
-    old_html_path = gen_default_html_path(input_path)
+        start_time = gen_timestamp(start_time)
 
-    new_output_path = gen_output_path(input_path, start_time)
-    new_html_path = gen_html_path(input_path, start_time)
+        old_output_path = gen_default_output_path(input_path)
+        old_html_path = gen_default_html_path(input_path)
 
-    os.rename(old_output_path, new_output_path)
-    os.rename(old_html_path, new_html_path)
+        new_output_path = gen_output_path(input_path, start_time)
+        new_html_path = gen_html_path(input_path, start_time)
+
+        # Renames files
+        os.rename(old_output_path, new_output_path)
+        os.rename(old_html_path, new_html_path)
+
+        logger.info("Successfully renamed files")
+
+    except Exception as e:
+        msg = "Failed to rename files"
+        logger.info(msg)
+        raise Exception(msg) from e
 
 
 def get_slack_token_channel(parameters):
