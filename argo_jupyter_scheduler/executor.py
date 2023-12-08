@@ -360,6 +360,9 @@ class ArgoExecutor(ExecutionManager):
         active: bool = True,
         use_conda_store_env: bool = True,
     ):
+        print("XXXXXXXXXXXXX", job.dict())
+        print("XXXXXXXXXXXXX", job_definition_id)
+
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
 
@@ -712,6 +715,9 @@ def rename_files(db_url, job_definition_id, input_path, start_time):
                 .order_by(Job.start_time.desc())
                 .first()
             )
+            print("YYYYYY", q.job_id)
+            print("YYYYYY", job_definition_id)
+            print("YYYYYY", q.url)
             start_time = q.start_time
 
     start_time = gen_timestamp(start_time)
