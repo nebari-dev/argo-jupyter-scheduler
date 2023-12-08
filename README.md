@@ -69,6 +69,14 @@ Slack channel:
     - name: `SLACK_TOKEN`, value: `xoxb-<Slack bot token>`
     - name: `SLACK_CHANNEL`, value: `<Slack channel name>` (without leading `#`, like `scheduled-jobs`).
 
+Create job:
+
+![Create job Slack](./assets/create-job-slack.png "Create job Slack")
+
+Slack output:
+
+![Slack output](./assets/slack-output.png "Slack output")
+
 ## A deeper dive
 
 In the Jupyter-Scheduler lab extension, you can create two things, a `Job` and a `Job Definition`.
