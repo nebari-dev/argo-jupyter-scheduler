@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Union
 
-from hera.workflows import Container, CronWorkflow, Env, Steps, Workflow, script
+from hera.workflows import Container, CronWorkflow, Env, Step, Steps, Workflow, script
 from hera.workflows.models import ContinueOn, TTLStrategy, WorkflowStopRequest
 from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.executors import ExecutionManager
@@ -224,10 +224,7 @@ class ArgoExecutor(ExecutionManager):
             )
 
             with Steps(name="steps"):
-                main(
-                    name="main",
-                    continue_on=ContinueOn(failed=True),
-                )
+                Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
                 rename_files(
                     name="rename-files",
@@ -400,10 +397,7 @@ class ArgoExecutor(ExecutionManager):
                     },
                 )
 
-                main(
-                    name="main",
-                    continue_on=ContinueOn(failed=True),
-                )
+                Step(name="main", template=main, continue_on=ContinueOn(failed=True))
 
                 rename_files(
                     name="rename-files",
