@@ -204,35 +204,6 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        envs = []
-        if parameters:
-            for key, value in parameters.items():
-                envs.append(Env(name=key, value=value))
-        else:
-            parameters = {}
-
-        def main(input_path, log_path):
-            start_time = "UNKNOWN"
-
-            output_path = gen_output_path(input_path, start_time)
-            html_path = gen_html_path(input_path, start_time)
-
-            cmd_args = gen_papermill_command_input(
-                conda_env_name=job.runtime_environment_name,
-                input_path=input_path,
-                output_path=output_path,
-                html_path=html_path,
-                log_path=log_path,
-                use_conda_store_env=use_conda_store_env,
-            )
-            main = Container(
-                name="main",
-                command=["/bin/sh"],
-                args=["-c", cmd_args],
-                env=envs,
-            )
-            return main
-
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -248,7 +219,9 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as w:
-            main = main(input_path, log_path)
+            main = main_container(
+                job, use_conda_store_env, input_path, log_path, parameters
+            )
 
             with Steps(name="steps"):
                 main(
@@ -382,34 +355,6 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        envs = []
-        if parameters:
-            for key, value in parameters.items():
-                envs.append(Env(name=key, value=value))
-        else:
-            parameters = {}
-
-        def main(input_path, log_path):
-            start_time = "UNKNOWN"
-
-            output_path = gen_output_path(input_path, start_time)
-            html_path = gen_html_path(input_path, start_time)
-
-            cmd_args = gen_papermill_command_input(
-                conda_env_name=job.runtime_environment_name,
-                input_path=input_path,
-                output_path=output_path,
-                html_path=html_path,
-                log_path=log_path,
-                use_conda_store_env=use_conda_store_env,
-            )
-            main = Container(
-                name="main",
-                command=["/bin/sh"],
-                args=["-c", cmd_args],
-                env=envs,
-            )
-            return main
 
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
@@ -440,7 +385,9 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as cwf:
-            main = main(input_path, log_path)
+            main = main_container(
+                job, use_conda_store_env, input_path, log_path, parameters
+            )
 
             with Steps(name="steps"):
                 create_job_record(
@@ -611,6 +558,34 @@ class ArgoExecutor(ExecutionManager):
         logger.info("cron workflow updated")
 
 
+def main_container(job, use_conda_store_env, input_path, log_path, parameters):
+    envs = []
+    if parameters is not None:
+        for key, value in parameters.items():
+            envs.append(Env(name=key, value=value))
+
+    start_time = "UNKNOWN"
+
+    output_path = gen_output_path(input_path, start_time)
+    html_path = gen_html_path(input_path, start_time)
+
+    cmd_args = gen_papermill_command_input(
+        conda_env_name=job.runtime_environment_name,
+        input_path=input_path,
+        output_path=output_path,
+        html_path=html_path,
+        log_path=log_path,
+        use_conda_store_env=use_conda_store_env,
+    )
+
+    return Container(
+        name="main",
+        command=["/bin/sh"],
+        args=["-c", cmd_args],
+        env=envs,
+    )
+
+
 @script()
 def update_job_status_failure(db_url, job_id=None, job_definition_id=None):
     from jupyter_scheduler.models import Status
@@ -741,8 +716,13 @@ def rename_files(db_url, job_definition_id, input_path, start_time):
 
 
 def get_slack_token_channel(parameters):
-    token = parameters.get("SLACK_TOKEN")
-    channel = parameters.get("SLACK_CHANNEL")
+    token = None
+    channel = None
+
+    if parameters is not None:
+        token = parameters.get("SLACK_TOKEN")
+        channel = parameters.get("SLACK_CHANNEL")
+
     return token, channel
 
 
