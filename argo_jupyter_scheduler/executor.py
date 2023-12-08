@@ -677,7 +677,6 @@ def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
         gen_default_output_path,
         gen_html_path,
         gen_output_path,
-        gen_timestamp,
         setup_logger,
     )
 
@@ -705,8 +704,6 @@ def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
                 os.symlink(old_dir, new_dir)
 
                 start_time = q.start_time
-
-        start_time = gen_timestamp(start_time)
 
         old_output_path = gen_default_output_path(input_path)
         old_html_path = gen_default_html_path(input_path)
@@ -749,7 +746,6 @@ def send_to_slack(
     from argo_jupyter_scheduler.utils import (
         add_file_logger,
         gen_html_path,
-        gen_timestamp,
         setup_logger,
     )
 
@@ -770,8 +766,6 @@ def send_to_slack(
                 )
 
                 start_time = q.start_time
-
-        start_time = gen_timestamp(start_time)
 
         html_path = gen_html_path(input_path, start_time)
 

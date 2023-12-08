@@ -2,13 +2,13 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urljoin
 
 import urllib3
 from hera.shared import global_config
+from jupyter_scheduler.utils import create_output_filename
 from urllib3.exceptions import ConnectionError
 
 CONDA_STORE_TOKEN = "CONDA_STORE_TOKEN"
@@ -72,12 +72,6 @@ def authenticate():
     return global_config
 
 
-def gen_timestamp(time: int):
-    # See create_output_filename in jupyter-scheduler
-    timestamp = datetime.fromtimestamp(time / 1e3)  # noqa: DTZ006
-    return timestamp.strftime("%Y-%m-%d-%I-%M-%S-%p")
-
-
 def gen_workflow_name(job_id: str):
     return f"job-{job_id}"
 
@@ -88,28 +82,28 @@ def gen_cron_workflow_name(job_definition_id: str):
 
 def gen_default_output_path(input_path: str):
     # The initial filename before we can get access to the timestamp. Has the
-    # "unknown" suffix to make it visible in the logs and to avoid clashing with
-    # the input filename.
-    return gen_output_path(input_path, "unknown")
+    # "0" suffix to avoid clashing with the input filename. This value will be
+    # pretty-printed as 1970-01-01-01-00-00-AM when the file is created.
+    return gen_output_path(input_path, 0)
 
 
 def gen_default_html_path(input_path: str):
     # The initial filename before we can get access to the timestamp. Has the
-    # "unknown" suffix to make it visible in the logs and to avoid clashing with
-    # the input filename.
-    return gen_html_path(input_path, "unknown")
+    # "0" suffix to avoid clashing with the input filename. This value will be
+    # pretty-printed as 1970-01-01-01-00-00-AM when the file is created.
+    return gen_html_path(input_path, 0)
 
 
-def gen_output_path(input_path: str, timestamp: str):
-    # See create_output_filename in jupyter-scheduler
-    basename = os.path.splitext(input_path)[0]
-    return f"{basename}-{timestamp}.ipynb"
+def gen_output_path(input_path: str, start_time: int):
+    # It's important to use this exact format to make files downloadable via the
+    # web UI.
+    return create_output_filename(input_path, start_time, "ipynb")
 
 
-def gen_html_path(input_path: str, timestamp: str):
-    # See create_output_filename in jupyter-scheduler
-    basename = os.path.splitext(input_path)[0]
-    return f"{basename}-{timestamp}.html"
+def gen_html_path(input_path: str, start_time: int):
+    # It's important to use this exact format to make files downloadable via the
+    # web UI.
+    return create_output_filename(input_path, start_time, "html")
 
 
 def gen_log_path(input_path: str):
