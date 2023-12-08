@@ -270,21 +270,24 @@ class ArgoExecutor(ExecutionManager):
                 failure += " || {{steps.rename-files.status}} == Failed"
                 successful += " && {{steps.rename-files.status}} == Succeeded"
 
-                # token, channel = get_slack_token_channel(parameters)
-                # if token is not None and channel is not None:
-                #     send_to_slack(
-                #         name="send-to-slack",
-                #         arguments={
-                #             "token": token,
-                #             "channel": channel,
-                #             "file_path": html_path,
-                #             "log_path": log_path,
-                #         },
-                #         when=successful,
-                #         continue_on=ContinueOn(failed=True),
-                #     )
-                #     failure += " || {{steps.send-to-slack.status}} == Failed"
-                #     successful += " && {{steps.send-to-slack.status}} == Succeeded"
+                token, channel = get_slack_token_channel(parameters)
+                if token is not None and channel is not None:
+                    send_to_slack(
+                        name="send-to-slack",
+                        arguments={
+                            "db_url": None,
+                            "job_definition_id": None,
+                            "input_path": input_path,
+                            "start_time": job.create_time,
+                            "token": token,
+                            "channel": channel,
+                            "log_path": log_path,
+                        },
+                        when=successful,
+                        continue_on=ContinueOn(failed=True),
+                    )
+                    failure += " || {{steps.send-to-slack.status}} == Failed"
+                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
 
                 update_job_status_failure(
                     name="failure",
@@ -468,21 +471,24 @@ class ArgoExecutor(ExecutionManager):
                 failure += " || {{steps.rename-files.status}} == Failed"
                 successful += " && {{steps.rename-files.status}} == Succeeded"
 
-                # token, channel = get_slack_token_channel(parameters)
-                # if token is not None and channel is not None:
-                #     send_to_slack(
-                #         name="send-to-slack",
-                #         arguments={
-                #             "token": token,
-                #             "channel": channel,
-                #             "file_path": html_path,
-                #             "log_path": log_path,
-                #         },
-                #         when=successful,
-                #         continue_on=ContinueOn(failed=True),
-                #     )
-                #     failure += " || {{steps.send-to-slack.status}} == Failed"
-                #     successful += " && {{steps.send-to-slack.status}} == Succeeded"
+                token, channel = get_slack_token_channel(parameters)
+                if token is not None and channel is not None:
+                    send_to_slack(
+                        name="send-to-slack",
+                        arguments={
+                            "db_url": db_url,
+                            "job_definition_id": job_definition_id,
+                            "input_path": input_path,
+                            "start_time": None,
+                            "token": token,
+                            "channel": channel,
+                            "log_path": log_path,
+                        },
+                        when=successful,
+                        continue_on=ContinueOn(failed=True),
+                    )
+                    failure += " || {{steps.send-to-slack.status}} == Failed"
+                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
 
                 update_job_status_failure(
                     name="failure",
@@ -741,12 +747,36 @@ def get_slack_token_channel(parameters):
 
 
 @script()
-def send_to_slack(token, channel, file_path, log_path):
+def send_to_slack(
+    db_url, job_definition_id, input_path, start_time, token, channel, log_path
+):
     import json
 
     import requests
+    from jupyter_scheduler.orm import Job, create_session
 
-    from argo_jupyter_scheduler.utils import add_file_logger, setup_logger
+    from argo_jupyter_scheduler.utils import (
+        add_file_logger,
+        gen_html_path,
+        gen_timestamp,
+        setup_logger,
+    )
+
+    if start_time is None:
+        db_session = create_session(db_url)
+        with db_session() as session:
+            q = (
+                session.query(Job)
+                .filter(Job.job_definition_id == job_definition_id)
+                .order_by(Job.start_time.desc())
+                .first()
+            )
+
+            start_time = q.start_time
+
+    start_time = gen_timestamp(start_time)
+
+    html_path = gen_html_path(input_path, start_time)
 
     try:
         logger = setup_logger("send_to_slack")
@@ -754,7 +784,7 @@ def send_to_slack(token, channel, file_path, log_path):
 
         url = "https://slack.com/api/files.upload"
 
-        files = {"file": (os.path.basename(file_path), open(file_path, "rb"))}
+        files = {"file": (os.path.basename(html_path), open(html_path, "rb"))}
 
         data = {
             "initial_comment": "Attaching new file",
@@ -765,7 +795,7 @@ def send_to_slack(token, channel, file_path, log_path):
             "Authorization": f"Bearer {token}",
         }
 
-        logger.info(f"Sending to Slack: file: {file_path}, channel: {channel}")
+        logger.info(f"Sending to Slack: file: {html_path}, channel: {channel}")
         response = requests.post(
             url, files=files, data=data, headers=headers, timeout=30
         )
