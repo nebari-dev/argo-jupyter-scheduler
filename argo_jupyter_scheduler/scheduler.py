@@ -134,7 +134,19 @@ class ArgoScheduler(Scheduler):
                 if os.path.exists(path):
                     if os.path.islink(path):
                         realpath = os.path.realpath(path)
-                        os.unlink(path)
+                        # For cron jobs, job directories in the staging dir are
+                        # symlinks that point to the real staging job directory,
+                        # which is created when the job is first scheduled.
+                        # Since we only have access to the current job
+                        # directory, which is a symlink, we first need to find
+                        # the other symlinks pointing to the same real directory
+                        # and remove them
+                        basedir = os.path.dirname(path)
+                        for f in next(os.walk(basedir))[1]:
+                            if os.path.islink(f) and os.path.realpath(f) == realpath:
+                                os.unlink(f)
+                        # Then we remove the real staging job directory, where
+                        # these symlinks used to point to
                         shutil.rmtree(realpath)
                     else:
                         shutil.rmtree(path)
