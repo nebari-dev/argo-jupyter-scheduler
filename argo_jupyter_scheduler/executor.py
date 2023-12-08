@@ -264,7 +264,7 @@ class ArgoExecutor(ExecutionManager):
                         "input_path": input_path,
                         "start_time": job.create_time,
                     },
-                    when=successful,
+                    continue_on=ContinueOn(failed=True),
                 )
 
                 failure += " || {{steps.rename-files.status}} == Failed"
@@ -465,7 +465,7 @@ class ArgoExecutor(ExecutionManager):
                         "input_path": input_path,
                         "start_time": None,
                     },
-                    when=successful,
+                    continue_on=ContinueOn(failed=True),
                 )
 
                 failure += " || {{steps.rename-files.status}} == Failed"
