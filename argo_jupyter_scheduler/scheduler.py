@@ -132,7 +132,12 @@ class ArgoScheduler(Scheduler):
             if staging_paths:
                 path = os.path.dirname(next(iter(staging_paths.values())))
                 if os.path.exists(path):
-                    shutil.rmtree(path)
+                    if os.path.islink(path):
+                        realpath = os.path.realpath(path)
+                        os.unlink(path)
+                        shutil.rmtree(realpath)
+                    else:
+                        shutil.rmtree(path)
 
             if delete_workflow:
                 p = Process(
