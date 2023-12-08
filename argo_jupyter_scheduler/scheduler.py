@@ -143,7 +143,7 @@ class ArgoScheduler(Scheduler):
                         # and remove them
                         basedir = os.path.dirname(path)
                         for f in next(os.walk(basedir))[1]:
-                            f = os.path.join(basedir, f)
+                            f = os.path.join(basedir, f)  # noqa: PLW2901
                             if os.path.islink(f) and os.path.realpath(f) == realpath:
                                 os.unlink(f)
                         # Then we remove the real staging job directory, where
