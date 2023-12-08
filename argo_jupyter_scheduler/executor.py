@@ -324,7 +324,7 @@ class ArgoExecutor(ExecutionManager):
 
         logger.info("workflow stopped")
 
-    def _create_cwf_oject(
+    def _create_cwf_object(
         self,
         job: DescribeJobDefinition,
         parameters: Dict[str, str],
@@ -472,7 +472,7 @@ class ArgoExecutor(ExecutionManager):
 
         logger.info("creating cron workflow...")
 
-        w = self._create_cwf_oject(
+        w = self._create_cwf_object(
             job=job,
             parameters=parameters,
             staging_paths=staging_paths,
@@ -534,7 +534,7 @@ class ArgoExecutor(ExecutionManager):
                 schedule = job_definition.schedule
                 timezone = job_definition.timezone
 
-        w = self._create_cwf_oject(
+        w = self._create_cwf_object(
             job=job,
             parameters=self.parameters,
             staging_paths=staging_paths,
