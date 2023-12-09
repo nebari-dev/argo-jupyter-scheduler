@@ -83,14 +83,14 @@ def gen_cron_workflow_name(job_definition_id: str):
 def gen_default_output_path(input_path: str):
     # The initial filename before we can get access to the timestamp. Has the
     # "0" suffix to avoid clashing with the input filename. This value will be
-    # pretty-printed as 1970-01-01-01-00-00-AM when the file is created.
+    # pretty-printed as the Unix epoch when the file is created.
     return gen_output_path(input_path, 0)
 
 
 def gen_default_html_path(input_path: str):
     # The initial filename before we can get access to the timestamp. Has the
     # "0" suffix to avoid clashing with the input filename. This value will be
-    # pretty-printed as 1970-01-01-01-00-00-AM when the file is created.
+    # pretty-printed as the Unix epoch when the file is created.
     return gen_html_path(input_path, 0)
 
 
