@@ -680,11 +680,11 @@ def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
         setup_logger,
     )
 
-    try:
-        # Sets up logging
-        logger = setup_logger("rename_files")
-        add_file_logger(logger, log_path)
+    # Sets up logging
+    logger = setup_logger("rename_files")
+    add_file_logger(logger, log_path)
 
+    try:
         # Gets start_time if not provided to generate file paths
         if start_time is None:
             db_session = create_session(db_url)
@@ -749,11 +749,11 @@ def send_to_slack(
         setup_logger,
     )
 
-    try:
-        # Sets up logging
-        logger = setup_logger("send_to_slack")
-        add_file_logger(logger, log_path)
+    # Sets up logging
+    logger = setup_logger("send_to_slack")
+    add_file_logger(logger, log_path)
 
+    try:
         # Gets start_time if not provided to generate file path
         if start_time is None:
             db_session = create_session(db_url)
