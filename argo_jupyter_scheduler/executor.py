@@ -719,7 +719,7 @@ def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
 
     except Exception as e:
         msg = "Failed to rename files"
-        logger.info(msg)
+        logger.exception(msg)
         raise Exception(msg) from e
 
 
@@ -801,5 +801,5 @@ def send_to_slack(
 
     except Exception as e:
         msg = "Failed to send to Slack"
-        logger.info(msg)
+        logger.exception(msg)
         raise Exception(msg) from e
