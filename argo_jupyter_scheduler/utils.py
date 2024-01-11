@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 import urllib3
 from hera.shared import global_config
+from jupyter_scheduler.utils import create_output_filename
 from urllib3.exceptions import ConnectionError
 
 CONDA_STORE_TOKEN = "CONDA_STORE_TOKEN"
@@ -37,6 +38,12 @@ def setup_logger(name):
     logger.addHandler(handler)
 
     return logger
+
+
+def add_file_logger(logger, log_path):
+    logger.setLevel(logging.DEBUG)
+    fh = logging.FileHandler(log_path)
+    logger.addHandler(fh)
 
 
 logger = setup_logger(__name__)
@@ -73,9 +80,30 @@ def gen_cron_workflow_name(job_definition_id: str):
     return f"job-def-{job_definition_id}"
 
 
-def gen_output_path(input_path: str):
-    p = Path(input_path)
-    return str(p.parent / "output.ipynb")
+def gen_default_output_path(input_path: str):
+    # The initial filename before we can get access to the timestamp. Has the
+    # "0" suffix to avoid clashing with the input filename. This value will be
+    # pretty-printed as the Unix epoch when the file is created.
+    return gen_output_path(input_path, 0)
+
+
+def gen_default_html_path(input_path: str):
+    # The initial filename before we can get access to the timestamp. Has the
+    # "0" suffix to avoid clashing with the input filename. This value will be
+    # pretty-printed as the Unix epoch when the file is created.
+    return gen_html_path(input_path, 0)
+
+
+def gen_output_path(input_path: str, start_time: int):
+    # It's important to use this exact format to make files downloadable via the
+    # web UI.
+    return create_output_filename(input_path, start_time, "ipynb")
+
+
+def gen_html_path(input_path: str, start_time: int):
+    # It's important to use this exact format to make files downloadable via the
+    # web UI.
+    return create_output_filename(input_path, start_time, "html")
 
 
 def gen_log_path(input_path: str):
@@ -157,24 +185,27 @@ def gen_conda_env_path(conda_env_name: str, use_conda_store_env: bool = True):
 
 
 def gen_papermill_command_input(
-    conda_env_name: str, input_path: str, use_conda_store_env: bool = True
+    conda_env_name: str,
+    input_path: str,
+    output_path: str,
+    html_path: str,
+    log_path: str,
+    use_conda_store_env: bool = True,
 ):
     # TODO: allow overrides
     kernel_name = "python3"
 
-    output_path = gen_output_path(input_path)
-    log_path = gen_log_path(input_path)
     conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
 
     logger.info(f"conda_env_path: {conda_env_path}")
     logger.info(f"output_path: {output_path}")
     logger.info(f"log_path: {log_path}")
+    logger.info(f"html_path: {html_path}")
 
-    return [
-        f"conda run -p {conda_env_path} papermill -k {kernel_name} {input_path} {output_path}",
-        "&>",
-        log_path,
-    ]
+    papermill = f"papermill -k {kernel_name} {input_path} {output_path}"
+    jupyter = f"jupyter nbconvert --to html {output_path} --output {html_path}"
+
+    return f'conda run -p {conda_env_path} /bin/sh -c "{{ {papermill} && {jupyter} ; }} >> {log_path} 2>&1"'
 
 
 def sanitize_label(s: str):

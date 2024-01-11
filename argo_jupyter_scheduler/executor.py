@@ -17,8 +17,12 @@ from jupyter_scheduler.utils import get_utc_timestamp
 
 from argo_jupyter_scheduler.utils import (
     WorkflowActionsEnum,
+    add_file_logger,
     authenticate,
     gen_cron_workflow_name,
+    gen_default_html_path,
+    gen_default_output_path,
+    gen_log_path,
     gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
@@ -181,9 +185,17 @@ class ArgoExecutor(ExecutionManager):
         db_url: str,
         use_conda_store_env: bool = True,
     ):
+        input_path = staging_paths["input"]
+        log_path = gen_log_path(input_path)
+
+        # Configure logging to file first
+        add_file_logger(logger, log_path)
+
         authenticate()
 
         logger.info("creating workflow...")
+        logger.info(f"create time: {job.create_time}")
+        logger.info(f"staging paths: {staging_paths}")
 
         labels = {
             "jupyterflow-override": "true",
@@ -192,26 +204,6 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        cmd_args = [
-            "-c",
-            *gen_papermill_command_input(
-                job.runtime_environment_name,
-                staging_paths["input"],
-                use_conda_store_env,
-            ),
-        ]
-        envs = []
-        if parameters:
-            for key, value in parameters.items():
-                envs.append(Env(name=key, value=value))
-
-        main = Container(
-            name="main",
-            command=["/bin/sh"],
-            args=cmd_args,
-            env=envs,
-        )
-
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -227,13 +219,53 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as w:
+            main = main_container(
+                job, use_conda_store_env, input_path, log_path, parameters
+            )
+
             with Steps(name="steps"):
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+
+                rename_files(
+                    name="rename-files",
+                    arguments={
+                        "db_url": None,
+                        "job_definition_id": None,
+                        "input_path": input_path,
+                        "log_path": log_path,
+                        "start_time": job.create_time,
+                    },
+                    continue_on=ContinueOn(failed=True),
+                )
+
+                failure += " || {{steps.rename-files.status}} == Failed"
+                successful += " && {{steps.rename-files.status}} == Succeeded"
+
+                token, channel = get_slack_token_channel(parameters)
+                if token is not None and channel is not None:
+                    send_to_slack(
+                        name="send-to-slack",
+                        arguments={
+                            "db_url": None,
+                            "job_definition_id": None,
+                            "input_path": input_path,
+                            "start_time": job.create_time,
+                            "token": token,
+                            "channel": channel,
+                            "log_path": log_path,
+                        },
+                        when=successful,
+                        continue_on=ContinueOn(failed=True),
+                    )
+                    failure += " || {{steps.send-to-slack.status}} == Failed"
+                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
+
                 update_job_status_failure(
                     name="failure",
                     arguments={"db_url": db_url, "job_id": job.job_id},
                     when=failure,
                 )
+
                 update_job_status_success(
                     name="success",
                     arguments={"db_url": db_url, "job_id": job.job_id},
@@ -290,7 +322,7 @@ class ArgoExecutor(ExecutionManager):
 
         logger.info("workflow stopped")
 
-    def _create_cwf_oject(
+    def _create_cwf_object(
         self,
         job: DescribeJobDefinition,
         parameters: Dict[str, str],
@@ -302,8 +334,17 @@ class ArgoExecutor(ExecutionManager):
         active: bool = True,
         use_conda_store_env: bool = True,
     ):
+        input_path = staging_paths["input"]
+        log_path = gen_log_path(input_path)
+
+        # Configure logging to file first
+        add_file_logger(logger, log_path)
+
         # Argo-Workflow verbage vs Jupyter-Scheduler verbage
         suspend = not active
+
+        logger.info(f"create time: {job.create_time}")
+        logger.info(f"staging paths: {staging_paths}")
 
         labels = {
             "jupyterflow-override": "true",
@@ -312,25 +353,7 @@ class ArgoExecutor(ExecutionManager):
                 os.environ["PREFERRED_USERNAME"]
             ),
         }
-        cmd_args = [
-            "-c",
-            *gen_papermill_command_input(
-                job.runtime_environment_name,
-                staging_paths["input"],
-                use_conda_store_env,
-            ),
-        ]
-        envs = []
-        if parameters:
-            for key, value in parameters.items():
-                envs.append(Env(name=key, value=value))
 
-        main = Container(
-            name="main",
-            command=["/bin/sh"],
-            args=cmd_args,
-            env=envs,
-        )
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -340,7 +363,7 @@ class ArgoExecutor(ExecutionManager):
         # mimics internals of the `scheduler.create_job_from_definition` method
         attributes = {
             **job.dict(exclude={"schedule", "timezone"}, exclude_none=True),
-            "input_uri": staging_paths["input"],
+            "input_uri": input_path,
         }
         model = CreateJob(**attributes)
 
@@ -360,6 +383,10 @@ class ArgoExecutor(ExecutionManager):
             labels=labels,
             ttl_strategy=ttl_strategy,
         ) as cwf:
+            main = main_container(
+                job, use_conda_store_env, input_path, log_path, parameters
+            )
+
             with Steps(name="steps"):
                 create_job_record(
                     name="create-job-id",
@@ -369,7 +396,43 @@ class ArgoExecutor(ExecutionManager):
                         "job_definition_id": job_definition_id,
                     },
                 )
+
                 Step(name="main", template=main, continue_on=ContinueOn(failed=True))
+
+                rename_files(
+                    name="rename-files",
+                    arguments={
+                        "db_url": db_url,
+                        "job_definition_id": job_definition_id,
+                        "input_path": input_path,
+                        "log_path": log_path,
+                        "start_time": None,
+                    },
+                    continue_on=ContinueOn(failed=True),
+                )
+
+                failure += " || {{steps.rename-files.status}} == Failed"
+                successful += " && {{steps.rename-files.status}} == Succeeded"
+
+                token, channel = get_slack_token_channel(parameters)
+                if token is not None and channel is not None:
+                    send_to_slack(
+                        name="send-to-slack",
+                        arguments={
+                            "db_url": db_url,
+                            "job_definition_id": job_definition_id,
+                            "input_path": input_path,
+                            "start_time": None,
+                            "token": token,
+                            "channel": channel,
+                            "log_path": log_path,
+                        },
+                        when=successful,
+                        continue_on=ContinueOn(failed=True),
+                    )
+                    failure += " || {{steps.send-to-slack.status}} == Failed"
+                    successful += " && {{steps.send-to-slack.status}} == Succeeded"
+
                 update_job_status_failure(
                     name="failure",
                     arguments={
@@ -378,6 +441,7 @@ class ArgoExecutor(ExecutionManager):
                     },
                     when=failure,
                 )
+
                 update_job_status_success(
                     name="success",
                     arguments={
@@ -404,7 +468,7 @@ class ArgoExecutor(ExecutionManager):
 
         logger.info("creating cron workflow...")
 
-        w = self._create_cwf_oject(
+        w = self._create_cwf_object(
             job=job,
             parameters=parameters,
             staging_paths=staging_paths,
@@ -466,7 +530,7 @@ class ArgoExecutor(ExecutionManager):
                 schedule = job_definition.schedule
                 timezone = job_definition.timezone
 
-        w = self._create_cwf_oject(
+        w = self._create_cwf_object(
             job=job,
             parameters=self.parameters,
             staging_paths=staging_paths,
@@ -488,6 +552,32 @@ class ArgoExecutor(ExecutionManager):
                 raise e
 
         logger.info("cron workflow updated")
+
+
+def main_container(job, use_conda_store_env, input_path, log_path, parameters):
+    envs = []
+    if parameters is not None:
+        for key, value in parameters.items():
+            envs.append(Env(name=key, value=value))
+
+    output_path = gen_default_output_path(input_path)
+    html_path = gen_default_html_path(input_path)
+
+    cmd_args = gen_papermill_command_input(
+        conda_env_name=job.runtime_environment_name,
+        input_path=input_path,
+        output_path=output_path,
+        html_path=html_path,
+        log_path=log_path,
+        use_conda_store_env=use_conda_store_env,
+    )
+
+    return Container(
+        name="main",
+        command=["/bin/sh"],
+        args=["-c", cmd_args],
+        env=envs,
+    )
 
 
 @script()
@@ -573,3 +663,143 @@ def create_job_record(
 
         session.add(job)
         session.commit()
+
+
+@script()
+def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
+    import os
+
+    from jupyter_scheduler.orm import Job, create_session
+
+    from argo_jupyter_scheduler.utils import (
+        add_file_logger,
+        gen_default_html_path,
+        gen_default_output_path,
+        gen_html_path,
+        gen_output_path,
+        setup_logger,
+    )
+
+    # Sets up logging
+    logger = setup_logger("rename_files")
+    add_file_logger(logger, log_path)
+
+    try:
+        # Gets start_time if not provided to generate file paths
+        if start_time is None:
+            db_session = create_session(db_url)
+            with db_session() as session:
+                q = (
+                    session.query(Job)
+                    .filter(Job.job_definition_id == job_definition_id)
+                    .order_by(Job.start_time.desc())
+                    .first()
+                )
+
+                # The current job id doesn't match the id in the staging area.
+                # Creates a symlink to make files downloadable via the web UI.
+                basedir = os.path.dirname(os.path.dirname(input_path))
+                old_dir = os.path.join(basedir, job_definition_id)
+                new_dir = os.path.join(basedir, q.job_id)
+                os.symlink(old_dir, new_dir)
+
+                start_time = q.start_time
+
+        old_output_path = gen_default_output_path(input_path)
+        old_html_path = gen_default_html_path(input_path)
+
+        new_output_path = gen_output_path(input_path, start_time)
+        new_html_path = gen_html_path(input_path, start_time)
+
+        # Renames files
+        os.rename(old_output_path, new_output_path)
+        os.rename(old_html_path, new_html_path)
+
+        logger.info("Successfully renamed files")
+
+    except Exception as e:
+        msg = "Failed to rename files"
+        logger.exception(msg)
+        raise Exception(msg) from e
+
+
+def get_slack_token_channel(parameters):
+    token = None
+    channel = None
+
+    if parameters is not None:
+        token = parameters.get("SLACK_TOKEN")
+        channel = parameters.get("SLACK_CHANNEL")
+
+    return token, channel
+
+
+@script()
+def send_to_slack(
+    db_url, job_definition_id, input_path, start_time, token, channel, log_path
+):
+    import json
+
+    import requests
+    from jupyter_scheduler.orm import Job, create_session
+
+    from argo_jupyter_scheduler.utils import (
+        add_file_logger,
+        gen_html_path,
+        setup_logger,
+    )
+
+    # Sets up logging
+    logger = setup_logger("send_to_slack")
+    add_file_logger(logger, log_path)
+
+    try:
+        # Gets start_time if not provided to generate file path
+        if start_time is None:
+            db_session = create_session(db_url)
+            with db_session() as session:
+                q = (
+                    session.query(Job)
+                    .filter(Job.job_definition_id == job_definition_id)
+                    .order_by(Job.start_time.desc())
+                    .first()
+                )
+
+                start_time = q.start_time
+
+        html_path = gen_html_path(input_path, start_time)
+
+        # Sends to Slack
+        url = "https://slack.com/api/files.upload"
+
+        files = {"file": (os.path.basename(html_path), open(html_path, "rb"))}
+
+        data = {
+            "initial_comment": "Attaching new file",
+            "channels": channel,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+        }
+
+        logger.info(f"Sending to Slack: file: {html_path}, channel: {channel}")
+        response = requests.post(
+            url, files=files, data=data, headers=headers, timeout=30
+        )
+        response.raise_for_status()
+
+        response = response.text
+        logger.info(f"Slack response: {response}")
+
+        if not json.loads(response).get("ok"):
+            msg = "Unexpected response when sending to Slack"
+            logger.info(msg)
+            raise Exception(msg)
+
+        logger.info("Successfully sent to Slack")
+
+    except Exception as e:
+        msg = "Failed to send to Slack"
+        logger.exception(msg)
+        raise Exception(msg) from e
