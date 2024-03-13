@@ -13,6 +13,7 @@ from urllib3.exceptions import ConnectionError
 
 CONDA_STORE_TOKEN = "CONDA_STORE_TOKEN"
 CONDA_STORE_SERVICE = "CONDA_STORE_SERVICE"
+CONDA_STORE_SERVICE_NAMESPACE = "CONDA_STORE_SERVICE_NAMESPACE"
 
 CONDA_ENV_LOCATION = "/opt/conda/envs/{conda_env_name}"
 CONDA_STORE_ENV_LOCATION = "/home/conda/{env_namespace}/envs/{conda_env_name}"
@@ -114,9 +115,10 @@ def gen_log_path(input_path: str):
 def send_request(api_v1_endpoint):
     token = os.environ[CONDA_STORE_TOKEN]
     conda_store_svc_name = os.environ[CONDA_STORE_SERVICE]
+    conda_store_svc_namespace = os.environ[CONDA_STORE_SERVICE_NAMESPACE]
 
     conda_store_svc_name, conda_store_service_port = conda_store_svc_name.split(":")
-    conda_store_endpoint = f"http://{conda_store_svc_name}.dev.svc:{conda_store_service_port}/conda-store/api/v1/"
+    conda_store_endpoint = f"http://{conda_store_svc_name}.{conda_store_svc_namespace}.svc:{conda_store_service_port}/conda-store/api/v1/"
     url = urljoin(conda_store_endpoint, api_v1_endpoint)
 
     http = urllib3.PoolManager()
