@@ -112,6 +112,11 @@ def gen_log_path(input_path: str):
     return str(p.parent / "logs.txt")
 
 
+def gen_papermill_status_path(input_path: str):
+    p = Path(input_path)
+    return str(p.parent / "papermill_status.txt")
+
+
 def send_request(api_v1_endpoint):
     token = os.environ[CONDA_STORE_TOKEN]
     conda_store_svc_name = os.environ[CONDA_STORE_SERVICE]
@@ -192,6 +197,7 @@ def gen_papermill_command_input(
     output_path: str,
     html_path: str,
     log_path: str,
+    papermill_status_path: str,
     use_conda_store_env: bool = True,
 ):
     # TODO: allow overrides
@@ -203,8 +209,9 @@ def gen_papermill_command_input(
     logger.info(f"output_path: {output_path}")
     logger.info(f"log_path: {log_path}")
     logger.info(f"html_path: {html_path}")
+    logger.info(f"papermill_status_path: {papermill_status_path}")
 
-    papermill = f"papermill -k {kernel_name} {input_path} {output_path}"
+    papermill = f"( papermill -k {kernel_name} {input_path} {output_path} ; ec=$(echo $?) ; echo $ec > {papermill_status_path} ; exit $ec )"
     jupyter = f"jupyter nbconvert --to html {output_path} --output {html_path}"
 
     return f'conda run -p {conda_env_path} /bin/sh -c "{{ {papermill} && {jupyter} ; }} >> {log_path} 2>&1"'

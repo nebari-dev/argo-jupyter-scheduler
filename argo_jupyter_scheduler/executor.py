@@ -23,6 +23,7 @@ from argo_jupyter_scheduler.utils import (
     gen_default_html_path,
     gen_default_output_path,
     gen_log_path,
+    gen_papermill_status_path,
     gen_papermill_command_input,
     gen_workflow_name,
     sanitize_label,
@@ -187,6 +188,7 @@ class ArgoExecutor(ExecutionManager):
     ):
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
+        papermill_status_path = gen_papermill_status_path(input_path)
 
         # Configure logging to file first
         add_file_logger(logger, log_path)
@@ -220,7 +222,12 @@ class ArgoExecutor(ExecutionManager):
             ttl_strategy=ttl_strategy,
         ) as w:
             main = main_container(
-                job, use_conda_store_env, input_path, log_path, parameters
+                job=job,
+                use_conda_store_env=use_conda_store_env,
+                input_path=input_path,
+                log_path=log_path,
+                papermill_status_path=papermill_status_path,
+                parameters=parameters,
             )
 
             with Steps(name="steps"):
@@ -262,7 +269,12 @@ class ArgoExecutor(ExecutionManager):
 
                 update_job_status_failure(
                     name="failure",
-                    arguments={"db_url": db_url, "job_id": job.job_id},
+                    arguments={
+                        "db_url": db_url,
+                        "log_path": log_path,
+                        "papermill_status_path": papermill_status_path,
+                        "job_id": job.job_id,
+                    },
                     when=failure,
                 )
 
@@ -336,6 +348,7 @@ class ArgoExecutor(ExecutionManager):
     ):
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
+        papermill_status_path = gen_papermill_status_path(input_path)
 
         # Configure logging to file first
         add_file_logger(logger, log_path)
@@ -384,7 +397,12 @@ class ArgoExecutor(ExecutionManager):
             ttl_strategy=ttl_strategy,
         ) as cwf:
             main = main_container(
-                job, use_conda_store_env, input_path, log_path, parameters
+                job=job,
+                use_conda_store_env=use_conda_store_env,
+                input_path=input_path,
+                log_path=log_path,
+                papermill_status_path=papermill_status_path,
+                parameters=parameters,
             )
 
             with Steps(name="steps"):
@@ -437,6 +455,8 @@ class ArgoExecutor(ExecutionManager):
                     name="failure",
                     arguments={
                         "db_url": db_url,
+                        "log_path": log_path,
+                        "papermill_status_path": papermill_status_path,
                         "job_definition_id": job_definition_id,
                     },
                     when=failure,
@@ -554,7 +574,7 @@ class ArgoExecutor(ExecutionManager):
         logger.info("cron workflow updated")
 
 
-def main_container(job, use_conda_store_env, input_path, log_path, parameters):
+def main_container(job, use_conda_store_env, input_path, log_path, papermill_status_path, parameters):
     envs = []
     if parameters is not None:
         for key, value in parameters.items():
@@ -569,6 +589,7 @@ def main_container(job, use_conda_store_env, input_path, log_path, parameters):
         output_path=output_path,
         html_path=html_path,
         log_path=log_path,
+        papermill_status_path=papermill_status_path,
         use_conda_store_env=use_conda_store_env,
     )
 
@@ -581,11 +602,29 @@ def main_container(job, use_conda_store_env, input_path, log_path, parameters):
 
 
 @script()
-def update_job_status_failure(db_url, job_id=None, job_definition_id=None):
+def update_job_status_failure(db_url, log_path, papermill_status_path, job_id=None, job_definition_id=None):
     from jupyter_scheduler.models import Status
     from jupyter_scheduler.orm import Job, create_session
     from sqlalchemy import desc
 
+    # Sets up logging
+    logger = setup_logger("update_job_status_failure")
+    add_file_logger(logger, log_path)
+
+    # Gets papermill status
+    try:
+        with open(papermill_status_path) as f:
+            papermill_status = int(f.read())
+    except Exception:
+        logger.exception("Failed to get papermill status")
+        papermill_status = None
+
+    if papermill_status == 127:
+        status_message = "Workflow failed (papermill not found)."
+    else:
+        status_message = "Workflow failed."
+
+    # Sets job status
     db_session = create_session(db_url)
     with db_session() as session:
         if job_definition_id:
@@ -599,7 +638,7 @@ def update_job_status_failure(db_url, job_id=None, job_definition_id=None):
             job_id = job.job_id
 
         session.query(Job).filter(Job.job_id == job_id).update(
-            {"status": Status.FAILED, "status_message": "Workflow failed."}
+            {"status": Status.FAILED, "status_message": status_message}
         )
         session.commit()
 
