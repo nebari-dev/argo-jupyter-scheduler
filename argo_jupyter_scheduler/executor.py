@@ -607,6 +607,11 @@ def update_job_status_failure(db_url, log_path, papermill_status_path, job_id=No
     from jupyter_scheduler.orm import Job, create_session
     from sqlalchemy import desc
 
+    from argo_jupyter_scheduler.utils import (
+        add_file_logger,
+        setup_logger,
+    )
+
     # Sets up logging
     logger = setup_logger("update_job_status_failure")
     add_file_logger(logger, log_path)
