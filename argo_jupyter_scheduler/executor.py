@@ -23,8 +23,8 @@ from argo_jupyter_scheduler.utils import (
     gen_default_html_path,
     gen_default_output_path,
     gen_log_path,
-    gen_papermill_status_path,
     gen_papermill_command_input,
+    gen_papermill_status_path,
     gen_workflow_name,
     sanitize_label,
     setup_logger,
@@ -574,7 +574,9 @@ class ArgoExecutor(ExecutionManager):
         logger.info("cron workflow updated")
 
 
-def main_container(job, use_conda_store_env, input_path, log_path, papermill_status_path, parameters):
+def main_container(
+    job, use_conda_store_env, input_path, log_path, papermill_status_path, parameters
+):
     envs = []
     if parameters is not None:
         for key, value in parameters.items():
@@ -602,15 +604,14 @@ def main_container(job, use_conda_store_env, input_path, log_path, papermill_sta
 
 
 @script()
-def update_job_status_failure(db_url, log_path, papermill_status_path, job_id=None, job_definition_id=None):
+def update_job_status_failure(
+    db_url, log_path, papermill_status_path, job_id=None, job_definition_id=None
+):
     from jupyter_scheduler.models import Status
     from jupyter_scheduler.orm import Job, create_session
     from sqlalchemy import desc
 
-    from argo_jupyter_scheduler.utils import (
-        add_file_logger,
-        setup_logger,
-    )
+    from argo_jupyter_scheduler.utils import add_file_logger, setup_logger
 
     # Sets up logging
     logger = setup_logger("update_job_status_failure")
