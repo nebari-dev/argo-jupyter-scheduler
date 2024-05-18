@@ -625,7 +625,8 @@ def update_job_status_failure(
         logger.exception("Failed to get papermill status")
         papermill_status = None
 
-    if papermill_status == 127:
+    status_not_found = 127
+    if papermill_status == status_not_found:
         status_message = "Workflow failed (papermill not found)."
     else:
         status_message = "Workflow failed."
