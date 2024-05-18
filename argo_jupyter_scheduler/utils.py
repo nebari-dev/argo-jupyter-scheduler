@@ -211,10 +211,11 @@ def gen_papermill_command_input(
     logger.info(f"html_path: {html_path}")
     logger.info(f"papermill_status_path: {papermill_status_path}")
 
-    papermill = f"( papermill -k {kernel_name} {input_path} {output_path} ; ec=$(echo $?) ; echo $ec > {papermill_status_path} ; exit $ec )"
+    papermill = f"( papermill -k {kernel_name} {input_path} {output_path} ; ec=$? ; echo $ec > {papermill_status_path} ; exit $ec )"
     jupyter = f"jupyter nbconvert --to html {output_path} --output {html_path}"
 
-    return f'conda run -p {conda_env_path} /bin/sh -c "{{ {papermill} && {jupyter} ; }} >> {log_path} 2>&1"'
+    # It's important that inner quotes are single quotes to prevent shell expansion
+    return f"conda run -p {conda_env_path} /bin/sh -c '{{ {papermill} && {jupyter} ; }} >> {log_path} 2>&1'"
 
 
 def sanitize_label(s: str):
