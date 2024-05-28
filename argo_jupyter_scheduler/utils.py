@@ -211,14 +211,19 @@ def gen_papermill_command_input(
     logger.info(f"html_path: {html_path}")
     logger.info(f"papermill_status_path: {papermill_status_path}")
 
+    # Within a single-quoted string, wraps the string in single quotes
+    def sq(s):
+        return rf"'\''{s}'\''"
+
+    # These commands are executed within a single-quoted string below
     papermill = (
-        f"( papermill -k {kernel_name} {input_path} {output_path} ; "
-        f"ec=$? ; echo $ec > {papermill_status_path} ; exit $ec )"
+        f"( papermill -k {sq(kernel_name)} {sq(input_path)} {sq(output_path)} ; "
+        f"ec=$? ; echo $ec > {sq(papermill_status_path)} ; exit $ec )"
     )
-    jupyter = f"jupyter nbconvert --to html {output_path} --output {html_path}"
+    jupyter = f"jupyter nbconvert --to html {sq(output_path)} --output {sq(html_path)}"
 
     # It's important that inner quotes are single quotes to prevent shell expansion
-    return f"conda run -p {conda_env_path} /bin/sh -c '{{ {papermill} && {jupyter} ; }} >> {log_path} 2>&1'"
+    return f"conda run -p '{conda_env_path}' /bin/sh -c '{{ {papermill} && {jupyter} ; }} >> {sq(log_path)} 2>&1'"
 
 
 def sanitize_label(s: str):
